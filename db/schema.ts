@@ -59,6 +59,18 @@ export const TestCasesTable = pgTable("test_cases", {
   sessionId: varchar("session_id", { length: 255 }),
   sessionUrl: varchar("session_url", { length: 500 }),
   visionAnalysis: text("vision_analysis"),
+  failureContext: jsonb("failure_context").$type<{
+    items: Array<{
+      kind: string;
+      source: string;
+      title: string;
+      url: string | null;
+      timestamp: string | null;
+      metadata?: Record<string, unknown>;
+    }>;
+    queries_run: Array<{ source: string; sql: string; rows: number; ms: number }>;
+    coral_available: boolean;
+  } | null>().default(null),
 });
 
 
