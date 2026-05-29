@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium, Page } from "playwright-core";
+import { coral, quote } from "@/lib/coral/client";
 
 const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY!,
@@ -74,6 +75,187 @@ async function readGithubFile({
         path,
         content: decodedContent.slice(0, 5000),
     };
+}
+
+type FailureContextItem = {
+    kind: "issue" | "commit" | "sentry" | "linear";
+    source: string;
+    title: string;
+    url: string | null;
+    timestamp: string | null;
+    metadata?: Record<string, unknown>;
+};
+
+type FailureContext = {
+    items: FailureContextItem[];
+    queries_run: { source: string; sql: string; rows: number; ms: number }[];
+    coral_available: boolean;
+};
+
+async function fetchFailureContext(testCase: {
+    repoOwner: string;
+    repoName: string;
+    targetRoute?: string | null;
+    targetFiles?: string[] | null;
+    title: string;
+    description: string;
+}): Promise<FailureContext> {
+    const ctx: FailureContext = { items: [], queries_run: [], coral_available: false };
+
+    // 1. Get catalog to see which sources the user has configured
+    let availableSchemas: Set<string>;
+    try {
+        const catalog = await coral.listCatalog();
+        availableSchemas = new Set(catalog.map((table) => table.schema_name));
+        ctx.coral_available = true;
+    } catch {
+        return ctx;
+    }
+
+    const owner = testCase.repoOwner;
+    const repo = testCase.repoName;
+    const route = testCase.targetRoute || "";
+    const routeKeyword = route.replace(/[^a-zA-Z0-9]/g, "").slice(0, 40);
+    const titleKeyword = testCase.title.split(" ").slice(0, 3).join(" ").trim();
+    const signal = routeKeyword || titleKeyword || "error";
+
+    // 2. GitHub issues — recent issues touching the route/title
+    if (availableSchemas.has("github")) {
+        const issueSql = `
+            SELECT 'github' AS source, title, html_url, state, created_at
+            FROM github.issues
+            WHERE owner = ${quote(owner)} AND repo = ${quote(repo)}
+            AND state = 'open'
+            AND (title ILIKE ${quote(`%${signal}%`)}
+            OR body ILIKE ${quote(`%${signal}%`)})
+            ORDER BY created_at DESC
+            LIMIT 5
+        `.trim();
+
+        const issueT0 = performance.now();
+        const issues = await coral.sqlOrEmpty(issueSql);
+        ctx.queries_run.push({
+            source: "github.issues",
+            sql: issueSql,
+            rows: issues.length,
+            ms: Math.round(performance.now() - issueT0),
+        });
+
+        for (const issue of issues) {
+            ctx.items.push({
+                kind: "issue",
+                source: "github",
+                title: String(issue.title ?? ""),
+                url: issue.html_url ? String(issue.html_url) : null,
+                timestamp: issue.created_at ? String(issue.created_at) : null,
+                metadata: { state: issue.state },
+            });
+        }
+
+        // 3. GitHub commits — recent commits touching the test's target files
+        const files = Array.isArray(testCase.targetFiles) ? testCase.targetFiles : [];
+        if (files.length > 0) {
+            const commitSql = `
+                SELECT 'github' AS source, message, html_url, committed_at, author_login
+                FROM github.commits
+                WHERE owner = ${quote(owner)} AND repo = ${quote(repo)}
+                ORDER BY committed_at DESC
+                LIMIT 10
+            `.trim();
+
+            const commitT0 = performance.now();
+            const commits = await coral.sqlOrEmpty(commitSql);
+            ctx.queries_run.push({
+                source: "github.commits",
+                sql: commitSql,
+                rows: commits.length,
+                ms: Math.round(performance.now() - commitT0),
+            });
+            
+            // Heuristic filter on the client side since not all Coral GitHub specs
+            // expose `files_changed`. Pick most recent 3.
+            for (const commit of commits.slice(0, 3)) {
+                ctx.items.push({
+                    kind: "commit",
+                    source: "github",
+                    title: String(commit.message ?? "").split("\n")[0].slice(0, 100),
+                    url: commit.html_url ? String(commit.html_url) : null,
+                    timestamp: commit.committed_at ? String(commit.committed_at) : null,
+                    metadata: { author: commit.author_login },
+                });
+            }
+        }
+    }
+
+    // 4. Sentry — recent errors on this route
+    if (availableSchemas.has("sentry") && routeKeyword) {
+        const sentrySql = `
+            SELECT 'sentry' AS source, title, permalink, last_seen, count
+            FROM sentry.issues
+            WHERE message ILIKE ${quote(`%${routeKeyword}%`)}
+            OR title ILIKE ${quote(`%${routeKeyword}%`)}
+            ORDER BY last_seen DESC
+            LIMIT 5
+        `.trim();
+
+        const sentryT0 = performance.now();
+        const sentryRows = await coral.sqlOrEmpty(sentrySql);
+        ctx.queries_run.push({
+            source: "sentry.issues",
+            sql: sentrySql,
+            rows: sentryRows.length,
+            ms: Math.round(performance.now() - sentryT0),
+        });
+
+        for (const row of sentryRows) {
+            ctx.items.push({
+                kind: "sentry",
+                source: "sentry",
+                title: String(row.title ?? ""),
+                url: row.permalink ? String(row.permalink) : null,
+                timestamp: row.last_seen ? String(row.last_seen) : null,
+                metadata: { count: row.count },
+            });
+        }
+    }
+
+    // 5. Linear — open issues related to the route/title
+    if (availableSchemas.has("linear")) {
+        const linearSignal = routeKeyword || titleKeyword;
+        if (linearSignal) {
+            const linearSql = `
+                SELECT 'linear' AS source, title, url, state, updated_at
+                FROM linear.issues
+                WHERE (title ILIKE ${quote(`%${linearSignal}%`)}
+                OR description ILIKE ${quote(`%${linearSignal}%`)})
+                AND state NOT IN ('Done', 'Cancelled', 'Completed')
+                ORDER BY updated_at DESC
+                LIMIT 5
+            `.trim();
+
+            const linearT0 = performance.now();
+            const linearRows = await coral.sqlOrEmpty(linearSql);
+            ctx.queries_run.push({
+                source: "linear.issues",
+                sql: linearSql,
+                rows: linearRows.length,
+                ms: Math.round(performance.now() - linearT0),
+            });
+
+            for (const row of linearRows) {
+                ctx.items.push({
+                    kind: "linear",
+                    source: "linear",
+                    title: String(row.title ?? ""),
+                    url: row.url ? String(row.url) : null,
+                    timestamp: row.updated_at ? String(row.updated_at) : null,
+                    metadata: { state: row.state },
+                });
+            }
+        }
+    }
+
+    return ctx;
 }
 
 export async function POST(req: NextRequest) {
@@ -387,6 +569,7 @@ async function resilientClick(loc, opts) {
                     sessionId: session.id,
                     sessionUrl: `https://www.browserbase.com/sessions/${session.id}`,
                     visionAnalysis: null,
+                    failureContext: null,
                 })
                 .where(eq(TestCasesTable.id, testCase.id));
 
@@ -407,15 +590,40 @@ async function resilientClick(loc, opts) {
             console.error("Script execution error:", execError);
             logs.push(`[SYSTEM ERROR] Script execution failed: ${execError.message || String(execError)}`);
 
+            logs.push("[SYSTEM] Querying Coral for related context...");
+            const coralCtxPromise = fetchFailureContext({
+                repoOwner: testCase.repoOwner,
+                repoName: testCase.repoName,
+                targetRoute: testCase.targetRoute,
+                targetFiles: testCase.targetFiles as string[] | null | undefined,
+                title: testCase.title,
+                description: testCase.description,
+            });
+
             let visionAnalysis: string | null = null;
+            let failureContext: FailureContext = { items: [], queries_run: [], coral_available: false };
             if (page) {
                 const screenshotUrl = await capturePageScreenshot(page);
+                failureContext = await coralCtxPromise;
+
+                if (failureContext.coral_available) {
+                    logs.push(
+                        `[SYSTEM] Coral returned ${failureContext.items.length} related items across ${failureContext.queries_run.length} queries.`
+                    );
+                    for (const query of failureContext.queries_run) {
+                        logs.push(`[CORAL] ${query.source}: ${query.rows} rows in ${query.ms}ms`);
+                    }
+                } else {
+                    logs.push("[SYSTEM] Coral unavailable or no sources configured; skipping context enrichment.");
+                }
+
                 if (screenshotUrl) {
                     logs.push("[SYSTEM] Captured failure screenshot, running vision analysis...");
                     try {
                         visionAnalysis = await analyzeScreenshot(
                             screenshotUrl,
-                            `${testCase.title}: ${testCase.description}. Expected: ${testCase.expectedResult ?? "N/A"}`
+                            `${testCase.title}: ${testCase.description}. Expected: ${testCase.expectedResult ?? "N/A"}`,
+                            failureContext.items
                         );
                         logs.push("[SYSTEM] Vision analysis completed.");
                         if (visionAnalysis) {
@@ -431,6 +639,8 @@ async function resilientClick(loc, opts) {
                         logs.push(`[SYSTEM] Vision analysis skipped: ${visionMsg}`);
                     }
                 }
+            } else {
+                failureContext = await coralCtxPromise;
             }
 
             // Clean up session and browser if still active
@@ -448,6 +658,7 @@ async function resilientClick(loc, opts) {
                     sessionId: session?.id || null,
                     sessionUrl: session ? `https://www.browserbase.com/sessions/${session.id}` : null,
                     visionAnalysis,
+                    failureContext,
                 })
                 .where(eq(TestCasesTable.id, testCase.id));
 
@@ -462,6 +673,7 @@ async function resilientClick(loc, opts) {
                 sessionId: session?.id,
                 sessionUrl: session ? `https://www.browserbase.com/sessions/${session.id}` : null,
                 visionAnalysis,
+                failureContext,
                 logs,
                 browserbaseScript: scriptText,
                 credits: newCredits,

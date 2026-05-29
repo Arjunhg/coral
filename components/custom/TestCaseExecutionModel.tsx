@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
     Dialog,
     DialogContent,
@@ -43,6 +43,21 @@ type Props = {
     repository: any; // Connected repository config
 };
 
+type FailureContextItem = {
+    kind: "issue" | "commit" | "sentry" | "linear" | string;
+    source: string;
+    title: string;
+    url: string | null;
+    timestamp: string | null;
+    metadata?: Record<string, unknown>;
+};
+
+type FailureContext = {
+    items: FailureContextItem[];
+    queries_run: { source: string; sql: string; rows: number; ms: number }[];
+    coral_available: boolean;
+};
+
 type RunResult = {
     testCaseId: number;
     status: "idle" | "generating" | "running" | "passed" | "failed";
@@ -52,6 +67,7 @@ type RunResult = {
     sessionUrl?: string;
     browserbaseScript?: string;
     visionAnalysis?: string;
+    failureContext?: FailureContext | null;
 };
 
 function extractVisionAnalysisFromLogs(logs?: string[]): string | null {
@@ -109,7 +125,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
     const [isExecuting, setIsExecuting] = useState(false);
     const [results, setResults] = useState<Record<number, RunResult>>({});
     const [selectedDetailId, setSelectedDetailId] = useState<number | null>(null);
-    const [detailTab, setDetailTab] = useState<"script" | "analysis" | "terminal">("script");
+    const [detailTab, setDetailTab] = useState<"script" | "analysis" | "context" | "terminal">("script");
 
     const { userDetail, setUserDetail } = useContext(UserDetailContext);
 
@@ -139,6 +155,10 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                         (tc as any).visionAnalysis ||
                         (tc as any).vision_analysis ||
                         undefined,
+                    failureContext:
+                        (tc as any).failureContext ||
+                        (tc as any).failure_context ||
+                        null,
                 };
             });
             setResults(initial);
@@ -218,6 +238,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                         sessionId: data.sessionId,
                         sessionUrl: data.sessionUrl,
                         visionAnalysis: parsedVisionAnalysis || undefined,
+                        failureContext: data.failureContext ?? data.failure_context ?? null,
                         error: data.error,
                     },
                 }));
@@ -240,6 +261,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                         status: "failed",
                         error: errMsg,
                         visionAnalysis: parsedVisionAnalysis || undefined,
+                        failureContext: err.response?.data?.failureContext ?? err.response?.data?.failure_context ?? null,
                         logs: Array.isArray(errorLogs)
                             ? errorLogs
                             : [...(prev[tcId]?.logs || []), `[SYSTEM ERROR] ${errMsg}`],
@@ -263,6 +285,10 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                 status: "idle",
                 logs: ["Queued..."],
                 browserbaseScript: tc.browserbaseScript || undefined,
+                failureContext:
+                    (tc as any).failureContext ||
+                    (tc as any).failure_context ||
+                    null,
             };
         });
         setResults(resetResults);
@@ -284,6 +310,10 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
         extractVisionAnalysisFromLogs(currentSelectedResult?.logs);
     const hasScript = Boolean(currentSelectedResult?.browserbaseScript);
     const hasAnalysis = Boolean(resolvedVisionAnalysis);
+    const hasContext = Boolean(
+        currentSelectedResult?.failureContext &&
+        currentSelectedResult.failureContext.items.length > 0
+    );
 
     useEffect(() => {
         setDetailTab("script");
@@ -516,6 +546,22 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                         </button>
                                         <button
                                             type="button"
+                                            onClick={() => hasContext && setDetailTab("context")}
+                                            disabled={!hasContext}
+                                            className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-colors ${detailTab === "context"
+                                                    ? "bg-blue-100 text-blue-900 border-blue-200"
+                                                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                                                } ${!hasContext ? "opacity-50 cursor-not-allowed" : ""}`}
+                                        >
+                                            Related Context
+                                            {hasContext && (
+                                                <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-blue-200 text-blue-900 text-[9px] font-bold w-4 h-4">
+                                                    {currentSelectedResult?.failureContext?.items.length}
+                                                </span>
+                                            )}
+                                        </button>
+                                        <button
+                                            type="button"
                                             onClick={() => setDetailTab("terminal")}
                                             className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-colors ${detailTab === "terminal"
                                                     ? "bg-gray-900 text-white border-gray-900"
@@ -569,6 +615,90 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                         No failure analysis available for this run.
                                                     </div>
                                                 )}
+                                            </div>
+                                        )}
+
+                                        {detailTab === "context" && (
+                                            <div className="rounded-lg border border-blue-200 bg-blue-50/40 overflow-hidden h-full flex flex-col min-h-0">
+                                                <div className="bg-blue-100/70 px-3.5 py-2 border-b border-blue-200 flex items-center gap-1.5">
+                                                    <Database className="h-3.5 w-3.5 text-blue-700" />
+                                                    <span className="text-xs font-semibold text-blue-900">
+                                                        Cross-Source Context (via Coral)
+                                                    </span>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="ml-auto text-[10px] border-blue-300 text-blue-700 bg-white"
+                                                    >
+                                                        {currentSelectedResult?.failureContext?.queries_run.length ?? 0} queries
+                                                    </Badge>
+                                                </div>
+                                                <div className="flex-1 overflow-auto scrollbar-hide p-3 space-y-3">
+                                                    {currentSelectedResult?.failureContext?.items.length === 0 && (
+                                                        <p className="text-sm text-blue-900/70">
+                                                            No related items found across connected sources.
+                                                        </p>
+                                                    )}
+
+                                                    {currentSelectedResult?.failureContext?.items.map((item, idx) => (
+                                                        <a
+                                                            key={`${item.source}-${idx}`}
+                                                            href={item.url || "#"}
+                                                            target={item.url ? "_blank" : undefined}
+                                                            rel="noopener noreferrer"
+                                                            className={`block rounded-md border p-3 bg-white hover:border-blue-400 transition-colors ${item.url ? "cursor-pointer" : "cursor-default"}`}
+                                                            onClick={(e) => !item.url && e.preventDefault()}
+                                                        >
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <Badge
+                                                                    className={`text-[10px] uppercase ${item.kind === "issue" ? "bg-amber-100 text-amber-800" :
+                                                                            item.kind === "commit" ? "bg-emerald-100 text-emerald-800" :
+                                                                                item.kind === "sentry" ? "bg-rose-100 text-rose-800" :
+                                                                                    item.kind === "linear" ? "bg-violet-100 text-violet-800" :
+                                                                                        "bg-gray-100 text-gray-800"
+                                                                        }`}
+                                                                >
+                                                                    {item.kind}
+                                                                </Badge>
+                                                                <span className="text-[10px] text-gray-500 uppercase">{item.source}</span>
+                                                                {item.timestamp && (
+                                                                    <span className="text-[10px] text-gray-400 ml-auto">
+                                                                        {new Date(item.timestamp).toLocaleDateString()}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-sm text-gray-800 leading-snug line-clamp-2">{item.title}</p>
+                                                            {item.metadata && Object.keys(item.metadata).length > 0 && (
+                                                                <p className="text-[11px] text-gray-500 mt-1">
+                                                                    {Object.entries(item.metadata)
+                                                                        .filter(([, value]) => value !== null && value !== undefined && value !== "")
+                                                                        .map(([key, value]) => `${key}: ${String(value)}`)
+                                                                        .join(" | ")}
+                                                                </p>
+                                                            )}
+                                                        </a>
+                                                    ))}
+
+                                                    {currentSelectedResult?.failureContext?.queries_run && (
+                                                        <details className="mt-3 text-[11px]">
+                                                            <summary className="cursor-pointer text-blue-700 font-semibold">
+                                                                View {currentSelectedResult.failureContext.queries_run.length} SQL queries
+                                                            </summary>
+                                                            <div className="mt-2 space-y-2">
+                                                                {currentSelectedResult.failureContext.queries_run.map((query, i) => (
+                                                                    <div
+                                                                        key={i}
+                                                                        className="rounded bg-gray-950 text-emerald-300 p-2 font-mono text-[10px] leading-relaxed"
+                                                                    >
+                                                                        <div className="text-blue-400 mb-1">
+                                                                            [{query.source}] {query.rows} rows | {query.ms}ms
+                                                                        </div>
+                                                                        <pre className="whitespace-pre-wrap">{query.sql}</pre>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </details>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
 
