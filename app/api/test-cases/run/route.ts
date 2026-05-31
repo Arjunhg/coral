@@ -92,6 +92,49 @@ type FailureContext = {
     coral_available: boolean;
 };
 
+const columnCache = new Map<string, Set<string>>();
+
+async function getColumnSet(schema: string, table: string): Promise<Set<string>> {
+    const key = `${schema}.${table}`;
+    const cached = columnCache.get(key);
+    if (cached) return cached;
+
+    try {
+        const columns = await coral.listColumns(schema, table);
+        const set = new Set(columns.map((col) => col.column_name));
+        columnCache.set(key, set);
+        return set;
+    } catch {
+        return new Set();
+    }
+}
+
+function resolveColumn(columns: Set<string>, candidates: string[]): string | null {
+    for (const candidate of candidates) {
+        if (columns.has(candidate)) return candidate;
+    }
+    return null;
+}
+
+function selectOrNull(column: string | null, alias: string): string {
+    return column ? `${column} AS ${alias}` : `NULL AS ${alias}`;
+}
+
+function buildRepoFilters(columns: Set<string>, owner: string, repo: string) {
+    const ownerCol = resolveColumn(columns, [
+        "owner",
+        "repo_owner",
+        "repository_owner",
+        "org",
+        "organization",
+    ]);
+    const repoCol = resolveColumn(columns, ["repo", "repository", "repository_name"]);
+    const filters: string[] = [];
+    if (ownerCol) filters.push(`${ownerCol} = ${quote(owner)}`);
+    if (repoCol) filters.push(`${repoCol} = ${quote(repo)}`);
+    return { filters, ownerCol, repoCol };
+}
+
 async function fetchFailureContext(testCase: {
     repoOwner: string;
     repoName: string;
@@ -112,6 +155,16 @@ async function fetchFailureContext(testCase: {
         return ctx;
     }
 
+    const githubIssuesCols = availableSchemas.has("github")
+        ? await getColumnSet("github", "issues")
+        : new Set<string>();
+    const githubCommitsCols = availableSchemas.has("github")
+        ? await getColumnSet("github", "commits")
+        : new Set<string>();
+    const linearIssuesCols = availableSchemas.has("linear")
+        ? await getColumnSet("linear", "issues")
+        : new Set<string>();
+
     const owner = testCase.repoOwner;
     const repo = testCase.repoName;
     const route = testCase.targetRoute || "";
@@ -121,14 +174,36 @@ async function fetchFailureContext(testCase: {
 
     // 2. GitHub issues — recent issues touching the route/title
     if (availableSchemas.has("github")) {
+        const titleCol = resolveColumn(githubIssuesCols, ["title"]);
+        const bodyCol = resolveColumn(githubIssuesCols, ["body", "body_text", "description"]);
+        const stateCol = resolveColumn(githubIssuesCols, ["state", "state_name", "state_type"]);
+        const createdCol = resolveColumn(githubIssuesCols, ["created_at", "updated_at"]);
+        const urlCol = resolveColumn(githubIssuesCols, ["html_url", "url"]);
+        const repoFilters = buildRepoFilters(githubIssuesCols, owner, repo).filters;
+
+        const issueFilters: string[] = [...repoFilters];
+        if (stateCol) {
+            issueFilters.push(`LOWER(${stateCol}) = 'open'`);
+        }
+
+        const signalFilters: string[] = [];
+        if (titleCol) signalFilters.push(`${titleCol} ILIKE ${quote(`%${signal}%`)}`);
+        if (bodyCol) signalFilters.push(`${bodyCol} ILIKE ${quote(`%${signal}%`)}`);
+        if (signalFilters.length > 0) {
+            issueFilters.push(`(${signalFilters.join(" OR ")})`);
+        }
+
+        const issueWhere = issueFilters.length > 0 ? `WHERE ${issueFilters.join(" AND ")}` : "";
+        const issueOrderBy = createdCol || titleCol;
         const issueSql = `
-            SELECT 'github' AS source, title, html_url, state, created_at
+            SELECT 'github' AS source,
+                ${selectOrNull(titleCol, "title")},
+                ${selectOrNull(urlCol, "html_url")},
+                ${selectOrNull(stateCol, "state")},
+                ${selectOrNull(createdCol, "created_at")}
             FROM github.issues
-            WHERE owner = ${quote(owner)} AND repo = ${quote(repo)}
-            AND state = 'open'
-            AND (title ILIKE ${quote(`%${signal}%`)}
-            OR body ILIKE ${quote(`%${signal}%`)})
-            ORDER BY created_at DESC
+            ${issueWhere}
+            ${issueOrderBy ? `ORDER BY ${issueOrderBy} DESC` : ""}
             LIMIT 5
         `.trim();
 
@@ -155,34 +230,86 @@ async function fetchFailureContext(testCase: {
         // 3. GitHub commits — recent commits touching the test's target files
         const files = Array.isArray(testCase.targetFiles) ? testCase.targetFiles : [];
         if (files.length > 0) {
-            const commitSql = `
-                SELECT 'github' AS source, message, html_url, committed_at, author_login
-                FROM github.commits
-                WHERE owner = ${quote(owner)} AND repo = ${quote(repo)}
-                ORDER BY committed_at DESC
-                LIMIT 10
-            `.trim();
+            const { filters, ownerCol, repoCol } = buildRepoFilters(
+                githubCommitsCols,
+                owner,
+                repo
+            );
+            if (ownerCol && repoCol) {
+                const messageCol = resolveColumn(githubCommitsCols, [
+                    "message",
+                    "commit_message",
+                ]);
+                const commitUrlCol = resolveColumn(githubCommitsCols, ["html_url", "url"]);
+                const committedCol = resolveColumn(githubCommitsCols, [
+                    "committed_at",
+                    "commit_date",
+                ]);
+                const authorCol = resolveColumn(githubCommitsCols, [
+                    "author_login",
+                    "author",
+                ]);
 
-            const commitT0 = performance.now();
-            const commits = await coral.sqlOrEmpty(commitSql);
-            ctx.queries_run.push({
-                source: "github.commits",
-                sql: commitSql,
-                rows: commits.length,
-                ms: Math.round(performance.now() - commitT0),
-            });
-            
-            // Heuristic filter on the client side since not all Coral GitHub specs
-            // expose `files_changed`. Pick most recent 3.
-            for (const commit of commits.slice(0, 3)) {
-                ctx.items.push({
-                    kind: "commit",
-                    source: "github",
-                    title: String(commit.message ?? "").split("\n")[0].slice(0, 100),
-                    url: commit.html_url ? String(commit.html_url) : null,
-                    timestamp: commit.committed_at ? String(commit.committed_at) : null,
-                    metadata: { author: commit.author_login },
+                const commitSql = `
+                    SELECT 'github' AS source,
+                        ${selectOrNull(messageCol, "message")},
+                        ${selectOrNull(commitUrlCol, "html_url")},
+                        ${selectOrNull(committedCol, "committed_at")},
+                        ${selectOrNull(authorCol, "author_login")}
+                    FROM github.commits
+                    WHERE ${filters.join(" AND ")}
+                    ${committedCol ? `ORDER BY ${committedCol} DESC` : ""}
+                    LIMIT 10
+                `.trim();
+
+                const commitT0 = performance.now();
+                const commits = await coral.sqlOrEmpty(commitSql);
+                ctx.queries_run.push({
+                    source: "github.commits",
+                    sql: commitSql,
+                    rows: commits.length,
+                    ms: Math.round(performance.now() - commitT0),
                 });
+
+                // Heuristic filter on the client side since not all Coral GitHub specs
+                // expose `files_changed`. Pick most recent 3.
+                for (const commit of commits.slice(0, 3)) {
+                    const url = commit.html_url ? String(commit.html_url) : null;
+                    let title = String(commit.message ?? "").split("\n")[0].slice(0, 100);
+                    if (!title) {
+                        const sha = url?.split("/commit/")[1]?.slice(0, 7);
+                        title = sha ? `Commit ${sha}` : "Recent commit";
+                    }
+
+                    let authorLogin: string | null = null;
+                    let authorUrl: string | null = null;
+                    const authorRaw = commit.author_login;
+                    if (typeof authorRaw === "string") {
+                        try {
+                            const parsed = JSON.parse(authorRaw);
+                            if (parsed && typeof parsed === "object") {
+                                authorLogin = typeof parsed.login === "string" ? parsed.login : null;
+                                authorUrl = typeof parsed.html_url === "string" ? parsed.html_url : null;
+                            }
+                        } catch {
+                            authorLogin = authorRaw;
+                        }
+                    } else if (authorRaw) {
+                        authorLogin = String(authorRaw);
+                    }
+
+                    ctx.items.push({
+                        kind: "commit",
+                        source: "github",
+                        title,
+                        url,
+                        timestamp: commit.committed_at ? String(commit.committed_at) : null,
+                        metadata: {
+                            author: authorLogin,
+                            author_url: authorUrl,
+                        },
+                    });
+                }
             }
         }
     }
@@ -223,13 +350,54 @@ async function fetchFailureContext(testCase: {
     if (availableSchemas.has("linear")) {
         const linearSignal = routeKeyword || titleKeyword;
         if (linearSignal) {
+            const linearTitleCol = resolveColumn(linearIssuesCols, ["title", "name"]);
+            const linearDescCol = resolveColumn(linearIssuesCols, [
+                "description",
+                "description_text",
+            ]);
+            const linearStateCol = resolveColumn(linearIssuesCols, [
+                "state",
+                "state_name",
+                "state_type",
+            ]);
+            const linearUpdatedCol = resolveColumn(linearIssuesCols, [
+                "updated_at",
+                "created_at",
+            ]);
+            const linearUrlCol = resolveColumn(linearIssuesCols, ["url", "html_url"]);
+
+            const linearFilters: string[] = [];
+            const linearSignalFilters: string[] = [];
+            if (linearTitleCol) {
+                linearSignalFilters.push(
+                    `${linearTitleCol} ILIKE ${quote(`%${linearSignal}%`)}`
+                );
+            }
+            if (linearDescCol) {
+                linearSignalFilters.push(
+                    `${linearDescCol} ILIKE ${quote(`%${linearSignal}%`)}`
+                );
+            }
+            if (linearSignalFilters.length > 0) {
+                linearFilters.push(`(${linearSignalFilters.join(" OR ")})`);
+            }
+            if (linearStateCol) {
+                linearFilters.push(
+                    `LOWER(${linearStateCol}) NOT IN ('done', 'cancelled', 'completed')`
+                );
+            }
+
+            const linearWhere =
+                linearFilters.length > 0 ? `WHERE ${linearFilters.join(" AND ")}` : "";
             const linearSql = `
-                SELECT 'linear' AS source, title, url, state, updated_at
+                SELECT 'linear' AS source,
+                    ${selectOrNull(linearTitleCol, "title")},
+                    ${selectOrNull(linearUrlCol, "url")},
+                    ${selectOrNull(linearStateCol, "state")},
+                    ${selectOrNull(linearUpdatedCol, "updated_at")}
                 FROM linear.issues
-                WHERE (title ILIKE ${quote(`%${linearSignal}%`)}
-                OR description ILIKE ${quote(`%${linearSignal}%`)})
-                AND state NOT IN ('Done', 'Cancelled', 'Completed')
-                ORDER BY updated_at DESC
+                ${linearWhere}
+                ${linearUpdatedCol ? `ORDER BY ${linearUpdatedCol} DESC` : ""}
                 LIMIT 5
             `.trim();
 

@@ -69,7 +69,6 @@ async function sidecarFetch(
         body?.detail
       );
     }
-
     return body;
   } catch (err: unknown) {
     if (err instanceof CoralError) {
@@ -100,6 +99,7 @@ export const coral = {
       },
       opts?.timeoutMs
     );
+    console.log("[coral] sql response:", body);
 
     return Array.isArray(body?.rows) ? body.rows : [];
   },
