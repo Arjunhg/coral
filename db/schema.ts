@@ -73,6 +73,33 @@ export const TestCasesTable = pgTable("test_cases", {
   } | null>().default(null),
 });
 
+export const apiKeys = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  keyPrefix: varchar("key_prefix", { length: 12 }).notNull(),
+  label: varchar("label", { length: 100 }).default("default"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+  revokedAt: timestamp("revoked_at"),
+});
+
+export const agentQueries = pgTable("agent_queries", {
+  id: serial("id").primaryKey(),
+  testCaseId: integer("test_case_id").references(() => TestCasesTable.id, {
+    onDelete: "cascade",
+  }),
+  runId: varchar("run_id", { length: 64 }),
+  source: varchar("source", { length: 100 }).notNull(),
+  sql: text("sql").notNull(),
+  rowsReturned: integer("rows_returned").notNull().default(0),
+  durationMs: integer("duration_ms").notNull().default(0),
+  agentRole: varchar("agent_role", { length: 50 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("ok"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

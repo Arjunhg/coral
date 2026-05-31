@@ -1,6 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { coral, CoralError } from "@/lib/coral/client";
+import { logAgentQuery, newRunId } from "@/lib/coral/trace-logger";
 
 const MAX_SQL_LEN = 4000;
 const DENY_PATTERNS = [
@@ -50,13 +51,43 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const runId = newRunId();
+  const t0 = performance.now();
+
   try {
-    const t0 = performance.now();
     const rows = await coral.sql(sql, { timeoutMs: 15000 });
     const ms = Math.round(performance.now() - t0);
 
-    return NextResponse.json({ rows, count: rows.length, duration_ms: ms });
+    void logAgentQuery({
+      runId,
+      source: "explorer",
+      sql,
+      rowsReturned: rows.length,
+      durationMs: ms,
+      agentRole: "explorer",
+      status: "ok",
+    });
+
+    return NextResponse.json({
+      rows,
+      count: rows.length,
+      duration_ms: ms,
+      run_id: runId,
+    });
   } catch (err: unknown) {
+    const ms = Math.round(performance.now() - t0);
+
+    void logAgentQuery({
+      runId,
+      source: "explorer",
+      sql,
+      rowsReturned: 0,
+      durationMs: ms,
+      agentRole: "explorer",
+      status: err instanceof CoralError && err.status === 504 ? "timeout" : "error",
+      errorMessage: err instanceof Error ? err.message : String(err),
+    });
+
     if (err instanceof CoralError) {
       return NextResponse.json(
         { error: err.message, detail: err.detail },

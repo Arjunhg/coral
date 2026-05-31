@@ -8,6 +8,8 @@ import { cookies } from "next/headers";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium, Page } from "playwright-core";
 import { coral, quote } from "@/lib/coral/client";
+import { tracedSql } from "@/lib/coral/traced-client";
+import { newRunId } from "@/lib/coral/trace-logger";
 
 const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY!,
@@ -136,13 +138,14 @@ function buildRepoFilters(columns: Set<string>, owner: string, repo: string) {
 }
 
 async function fetchFailureContext(testCase: {
+    id: number;
     repoOwner: string;
     repoName: string;
     targetRoute?: string | null;
     targetFiles?: string[] | null;
     title: string;
     description: string;
-}): Promise<FailureContext> {
+}, runId: string): Promise<FailureContext> {
     const ctx: FailureContext = { items: [], queries_run: [], coral_available: false };
 
     // 1. Get catalog to see which sources the user has configured
@@ -208,7 +211,12 @@ async function fetchFailureContext(testCase: {
         `.trim();
 
         const issueT0 = performance.now();
-        const issues = await coral.sqlOrEmpty(issueSql);
+        const issues = await tracedSql(issueSql, {
+            testCaseId: testCase.id,
+            runId,
+            source: "github.issues",
+            agentRole: "failure_enricher",
+        });
         ctx.queries_run.push({
             source: "github.issues",
             sql: issueSql,
@@ -263,7 +271,12 @@ async function fetchFailureContext(testCase: {
                 `.trim();
 
                 const commitT0 = performance.now();
-                const commits = await coral.sqlOrEmpty(commitSql);
+                const commits = await tracedSql(commitSql, {
+                    testCaseId: testCase.id,
+                    runId,
+                    source: "github.commits",
+                    agentRole: "failure_enricher",
+                });
                 ctx.queries_run.push({
                     source: "github.commits",
                     sql: commitSql,
@@ -326,7 +339,12 @@ async function fetchFailureContext(testCase: {
         `.trim();
 
         const sentryT0 = performance.now();
-        const sentryRows = await coral.sqlOrEmpty(sentrySql);
+        const sentryRows = await tracedSql(sentrySql, {
+            testCaseId: testCase.id,
+            runId,
+            source: "sentry.issues",
+            agentRole: "failure_enricher",
+        });
         ctx.queries_run.push({
             source: "sentry.issues",
             sql: sentrySql,
@@ -402,7 +420,12 @@ async function fetchFailureContext(testCase: {
             `.trim();
 
             const linearT0 = performance.now();
-            const linearRows = await coral.sqlOrEmpty(linearSql);
+            const linearRows = await tracedSql(linearSql, {
+                testCaseId: testCase.id,
+                runId,
+                source: "linear.issues",
+                agentRole: "failure_enricher",
+            });
             ctx.queries_run.push({
                 source: "linear.issues",
                 sql: linearSql,
@@ -430,6 +453,7 @@ export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
         const { testCaseId, baseUrl, mode = "generate", customPrompt = "" } = body;
+        const runId = newRunId();
 
         if (!testCaseId || !baseUrl) {
             return NextResponse.json(
@@ -760,13 +784,14 @@ async function resilientClick(loc, opts) {
 
             logs.push("[SYSTEM] Querying Coral for related context...");
             const coralCtxPromise = fetchFailureContext({
+                id: testCase.id,
                 repoOwner: testCase.repoOwner,
                 repoName: testCase.repoName,
                 targetRoute: testCase.targetRoute,
                 targetFiles: testCase.targetFiles as string[] | null | undefined,
                 title: testCase.title,
                 description: testCase.description,
-            });
+            }, runId);
 
             let visionAnalysis: string | null = null;
             let failureContext: FailureContext = { items: [], queries_run: [], coral_available: false };

@@ -10,7 +10,7 @@ export async function GET(req: NextRequest){
 
     try {
         const tables = await coral.listCatalog();
-        return NextResponse.json({ table : tables }, { status: 200 });
+        return NextResponse.json({ tables }, { status: 200 });
     } catch (error) {
         return NextResponse.json({ error: "internal server error" }, { status: 500 });
     }
