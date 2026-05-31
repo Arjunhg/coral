@@ -10,7 +10,7 @@ inputs:
     hint: Generate from Scriptless workspace API Keys.
   SCRIPTLESS_BASE_URL:
     kind: variable
-    default: https://scriptless-ai.vercel.app
+    default: https://scriptless-ai-eta.vercel.app
 
 base_url: "{{input.SCRIPTLESS_BASE_URL}}"
 
