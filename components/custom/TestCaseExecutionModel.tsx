@@ -310,10 +310,8 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
         extractVisionAnalysisFromLogs(currentSelectedResult?.logs);
     const hasScript = Boolean(currentSelectedResult?.browserbaseScript);
     const hasAnalysis = Boolean(resolvedVisionAnalysis);
-    const hasContext = Boolean(
-        currentSelectedResult?.failureContext &&
-        currentSelectedResult.failureContext.items.length > 0
-    );
+    const hasContext = Boolean(currentSelectedResult?.failureContext);
+    const coralAvailable = currentSelectedResult?.failureContext?.coral_available ?? false;
 
     useEffect(() => {
         setDetailTab("script");
@@ -340,7 +338,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-            <DialogContent className="w-[calc(100vw-1rem)] max-w-5xl h-[95dvh] sm:h-[90vh] flex flex-col p-3 sm:p-6 gap-3 sm:gap-4 bg-white rounded-2xl shadow-2xl border overflow-hidden select-none">
+            <DialogContent className="w-[calc(100vw-1rem)] max-w-5xl h-[95dvh] sm:h-[90vh] flex flex-col p-3 sm:p-6 gap-3 sm:gap-4 bg-white rounded-2xl shadow-2xl border overflow-hidden">
                 <DialogHeader className="border-b pb-3 sm:pb-4 flex flex-row items-center justify-between shrink-0">
                     <div>
                         <DialogTitle className="text-base min-[361px]:text-lg sm:text-2xl font-bold text-gray-900 flex items-center gap-2 pr-7 sm:pr-10">
@@ -581,7 +579,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                     </span>
                                                 </div>
                                                 {hasScript ? (
-                                                    <pre className="flex-1 p-3 bg-gray-950 text-emerald-400 font-mono text-[11px] leading-relaxed overflow-auto scrollbar-hide">
+                                                    <pre className="flex-1 p-3 bg-gray-950 text-emerald-400 font-mono text-[11px] leading-relaxed overflow-auto scrollbar-hide select-text">
                                                         {currentSelectedResult?.browserbaseScript}
                                                     </pre>
                                                 ) : (
@@ -607,7 +605,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                     </Badge>
                                                 </div>
                                                 {hasAnalysis ? (
-                                                    <div className="flex-1 p-3.5 text-sm text-violet-950 leading-relaxed whitespace-pre-wrap overflow-auto scrollbar-hide">
+                                                    <div className="flex-1 p-3.5 text-sm text-violet-950 leading-relaxed whitespace-pre-wrap overflow-auto scrollbar-hide select-text">
                                                         {resolvedVisionAnalysis}
                                                     </div>
                                                 ) : (
@@ -632,10 +630,12 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                         {currentSelectedResult?.failureContext?.queries_run.length ?? 0} queries
                                                     </Badge>
                                                 </div>
-                                                <div className="flex-1 overflow-auto scrollbar-hide p-3 space-y-3">
+                                                <div className="flex-1 overflow-auto scrollbar-hide p-3 space-y-3 select-text">
                                                     {currentSelectedResult?.failureContext?.items.length === 0 && (
                                                         <p className="text-sm text-blue-900/70">
-                                                            No related items found across connected sources.
+                                                            {coralAvailable
+                                                                ? "No related items found across connected sources."
+                                                                : "Coral is unavailable or no sources are configured for this workspace."}
                                                         </p>
                                                     )}
 
