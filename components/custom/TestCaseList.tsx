@@ -65,6 +65,19 @@ function TestCaseList({
         setIsModelOpen(true);
     }, [voiceRunScope, voiceRunSignal, filteredTestCases, selectedTestCases, testCases]);
 
+    useEffect(() => {
+        const handler = (event: Event) => {
+            const customEvent = event as CustomEvent<{ repoId: number; tests: TestCase[] }>;
+            if (customEvent.detail.repoId !== repository?.repoId) return;
+            if (!customEvent.detail.tests || customEvent.detail.tests.length === 0) return;
+            setRunQueue(customEvent.detail.tests);
+            setIsModelOpen(true);
+        };
+
+        window.addEventListener("scriptless:smart-run", handler);
+        return () => window.removeEventListener("scriptless:smart-run", handler);
+    }, [repository?.repoId]);
+
     const runSelectedTests = () => {
         if (selectedTestCases.length === 0) return;
         setRunQueue(selectedTestCases);

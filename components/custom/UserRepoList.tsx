@@ -6,8 +6,9 @@ import {
     AccordionItem,
     AccordionTrigger,
 } from "@/components/ui/accordion"
+import { Badge } from '../ui/badge'
 import Image from 'next/image'
-import { CheckCircle2, Globe2Icon, Link2Icon, ListChecks, Loader2, Loader2Icon, Settings2, Sparkles, TrendingUp, XCircle } from 'lucide-react'
+import { CheckCircle2, Link2Icon, ListChecks, Loader2, Loader2Icon, Play, Sparkles, TrendingUp, XCircle } from 'lucide-react'
 import { Button } from '../ui/button'
 import axios from 'axios'
 import { UserDetailContext } from '@/context/UserDetailContext'
@@ -20,6 +21,7 @@ type props = {
     voiceFilter: "all" | "passing" | "failing";
     voiceRunSignal: number;
     voiceRunScope: "all" | "failed" | "selected";
+    onActiveRepoChange?: (repo: UserRepo | null) => void;
 }
 
 export type TestCase = {
@@ -50,6 +52,7 @@ function UserRepoList({
     voiceFilter,
     voiceRunSignal,
     voiceRunScope,
+    onActiveRepoChange,
 }: props) {
 
     const [statusData, setStatusData] = useState<StatusData>({
@@ -65,6 +68,12 @@ function UserRepoList({
     const [testCaseLoading, setTestCaseLoading] = useState(false);
     const [testCases, setTestCases] = useState<TestCase[]>([]);
     const [activeRepoId, setActiveRepoId] = useState<number | null>(null);
+    const [smartRunLoading, setSmartRunLoading] = useState<number | null>(null);
+    const [smartRunResults, setSmartRunResults] = useState<{
+        repoId: number;
+        tests: { id: number; title: string; score: number; reason: string }[];
+        rationale: string;
+    } | null>(null);
     const handleGenerateTestCases = async (repo: UserRepo) => {
         setLoading(true);
         try {
@@ -116,6 +125,27 @@ function UserRepoList({
 
     }
 
+    const handleSmartRun = async (repo: UserRepo) => {
+        setSmartRunLoading(repo.repoId);
+        try {
+            const res = await axios.post('/api/test-cases/smart-run', {
+                repoId: repo.repoId,
+                repoOwner: repo.owner,
+                repoName: repo.name,
+                withinDays: 7,
+            });
+            setSmartRunResults({
+                repoId: repo.repoId,
+                tests: Array.isArray(res.data?.tests) ? res.data.tests : [],
+                rationale: String(res.data?.rationale || ''),
+            });
+        } catch (error: any) {
+            alert(error.response?.data?.error || error.message || 'Smart Run failed');
+        } finally {
+            setSmartRunLoading(null);
+        }
+    };
+
     return (
         <div className='mt-10'>
             <h2 className='my-3 font-medium'>REPOSITORIES</h2>
@@ -125,8 +155,11 @@ function UserRepoList({
                     setActiveRepoId(Number.isFinite(parsed) ? parsed : null);
                     if (value) {
                         GetTestCases(parsed);
+                        const selectedRepo = repoList.find((repo) => repo.repoId === parsed) || null;
+                        onActiveRepoChange?.(selectedRepo);
                     } else {
                         setTestCases([]);
+                        onActiveRepoChange?.(null);
                     }
                 }}
             >
@@ -157,7 +190,23 @@ function UserRepoList({
                                         <h2 className='bg-white p-1 px-2 border rounded-md text-primary font-medium text-xs sm:text-sm truncate min-w-0'>{repo?.targetDomain || "Not configured"}</h2>
                                     </div>
                                     <div className='w-full sm:w-auto'>
-                                        <RepoSettings repo={repo} setReload={setReload} />
+                                        <div className='flex items-center gap-2'>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className='gap-2'
+                                                disabled={smartRunLoading === repo.repoId || testCaseLoading}
+                                                onClick={() => handleSmartRun(repo)}
+                                            >
+                                                {smartRunLoading === repo.repoId ? (
+                                                    <Loader2 className='h-3 w-3 animate-spin' />
+                                                ) : (
+                                                    <Sparkles className='h-3 w-3' />
+                                                )}
+                                                Smart Run
+                                            </Button>
+                                            <RepoSettings repo={repo} setReload={setReload} />
+                                        </div>
                                     </div>
                                 </div>
                                 <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4'>
@@ -198,6 +247,73 @@ function UserRepoList({
                                         voiceRunSignal={activeRepoId === repo.repoId ? voiceRunSignal : 0}
                                         voiceRunScope={voiceRunScope}
                                     />}
+
+                                {smartRunResults?.repoId === repo.repoId && (
+                                    <div className='mt-4 rounded-lg border border-blue-200 bg-blue-50/50 p-3'>
+                                        <div className='flex items-center gap-2 mb-2'>
+                                            <Sparkles className='h-4 w-4 text-blue-700' />
+                                            <h4 className='text-sm font-semibold text-blue-900'>
+                                                {smartRunResults.tests.length} prioritized tests
+                                            </h4>
+                                            <Badge
+                                                variant="outline"
+                                                className='ml-auto text-[10px] border-blue-300 text-blue-700 bg-white'
+                                            >
+                                                Powered by Coral
+                                            </Badge>
+                                        </div>
+                                        <p className='text-xs text-blue-800 mb-3'>{smartRunResults.rationale}</p>
+
+                                        <div className='space-y-1.5 mb-3 max-h-48 overflow-auto'>
+                                            {smartRunResults.tests.length === 0 && (
+                                                <p className='text-xs text-blue-900/70 italic'>
+                                                    No tests match recent activity. Try running all tests.
+                                                </p>
+                                            )}
+                                            {smartRunResults.tests.map((test, index) => (
+                                                <div
+                                                    key={test.id}
+                                                    className='flex items-start gap-2 rounded-md bg-white border border-blue-100 px-2.5 py-1.5'
+                                                >
+                                                    <span className='text-[10px] font-mono text-blue-700 bg-blue-100 rounded px-1.5 py-0.5 mt-0.5'>
+                                                        #{index + 1}
+                                                    </span>
+                                                    <div className='min-w-0 flex-1'>
+                                                        <p className='text-xs font-medium text-gray-800 truncate'>{test.title}</p>
+                                                        <p className='text-[10px] text-blue-700/80 mt-0.5'>{test.reason}</p>
+                                                    </div>
+                                                    <Badge variant="secondary" className='text-[10px] shrink-0' title='Priority score'>
+                                                        {test.score}
+                                                    </Badge>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className='flex gap-2 justify-end'>
+                                            <Button variant="ghost" size="sm" onClick={() => setSmartRunResults(null)}>
+                                                Dismiss
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                className='gap-2'
+                                                disabled={smartRunResults.tests.length === 0}
+                                                onClick={() => {
+                                                    const prioritizedIds = new Set(smartRunResults.tests.map((t) => t.id));
+                                                    const prioritizedTests = testCases.filter((tc) => prioritizedIds.has(tc.id));
+                                                    window.dispatchEvent(
+                                                        new CustomEvent("scriptless:smart-run", {
+                                                            detail: { repoId: repo.repoId, tests: prioritizedTests },
+                                                        })
+                                                    );
+                                                    setSmartRunResults(null);
+                                                }}
+                                            >
+                                                <Play className='h-3 w-3' />
+                                                Run these {smartRunResults.tests.length} tests
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {testCaseLoading ?
                                     <h2 className='flex gap-3 items-center text-sm'> <Loader2Icon className='animate-spin' /> Please Wait... </h2>

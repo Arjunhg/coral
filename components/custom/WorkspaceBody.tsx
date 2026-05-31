@@ -11,6 +11,7 @@ import RepoDialog from './RepoDialog';
 import UserRepoList from './UserRepoList';
 import VoiceCommandButton from '@/components/voice/VoiceCommandButton';
 import { VoiceCommand, VoiceFilterStatus } from '@/lib/speechmatics/commandParser';
+import CoralExplorer from '@/components/custom/CoralExplorer';
 
 export type UserRepo = {
     id: number;
@@ -42,6 +43,10 @@ function WorkspaceBody() {
     const [voiceRunScope, setVoiceRunScope] = useState<"all" | "failed" | "selected">("all");
     const [voiceRunSignal, setVoiceRunSignal] = useState(0);
     const [voiceToast, setVoiceToast] = useState<string | null>(null);
+    const [explorerOpen, setExplorerOpen] = useState(false);
+    const [explorerQuery, setExplorerQuery] = useState<string>("");
+    const [explorerKey, setExplorerKey] = useState(0);
+    const [activeRepo, setActiveRepo] = useState<UserRepo | null>(null);
     useEffect(() => {
         GetGithubUserToken();
 
@@ -86,6 +91,14 @@ function WorkspaceBody() {
                 setRepoDialogOpenSignal((prev) => prev + 1);
                 showVoiceToast("Voice command: opening repository picker");
                 break;
+            case "QUERY_DATA":
+                setExplorerQuery(command.text);
+                setExplorerKey((prev) => prev + 1);
+                setExplorerOpen(true);
+                showVoiceToast(
+                    `Voice query: "${command.text.slice(0, 50)}${command.text.length > 50 ? "..." : ""}"`
+                );
+                break;
             case "UNKNOWN":
             default:
                 if (command.raw.trim().length >= 12) {
@@ -109,6 +122,13 @@ function WorkspaceBody() {
             <div className='flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center'>
                 <h2 className='text-2xl sm:text-3xl lg:text-4xl font-medium'>Workspace</h2>
                 <div className='flex flex-wrap items-center gap-2 sm:gap-3'>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setExplorerOpen((prev) => !prev)}
+                    >
+                        {explorerOpen ? "Hide Explorer" : "Open Explorer"}
+                    </Button>
                     <VoiceCommandButton onCommand={handleVoiceCommand} />
                     <h2 className='text-blue-800 bg-blue-100 px-2 py-1 rounded-lg text-sm'>
                         <span className='hidden min-[361px]:inline'>Remaining Credits: </span>
@@ -156,7 +176,51 @@ function WorkspaceBody() {
                     voiceFilter={voiceFilter}
                     voiceRunSignal={voiceRunSignal}
                     voiceRunScope={voiceRunScope}
+                    onActiveRepoChange={setActiveRepo}
                 />
+            )}
+
+            {explorerOpen && (
+                <Card className='mt-6 p-3 sm:p-4'>
+                    <div className='flex items-center justify-between mb-3'>
+                        <h3 className='text-sm font-semibold text-gray-800'>Coral Explorer</h3>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                                setExplorerOpen(false);
+                                setExplorerQuery("");
+                            }}
+                        >
+                            Close
+                        </Button>
+                    </div>
+                    <CoralExplorer
+                        key={explorerKey}
+                        initialQuery={explorerQuery}
+                        autoSubmit={Boolean(explorerQuery)}
+                        repoOptions={userRepoList.map((repo) => ({
+                            owner: repo.owner,
+                            name: repo.name,
+                            fullName: repo.fullName,
+                        }))}
+                        defaultRepo={
+                            activeRepo
+                                ? {
+                                    owner: activeRepo.owner,
+                                    name: activeRepo.name,
+                                    fullName: activeRepo.fullName,
+                                }
+                                : userRepoList[0]
+                                ? {
+                                    owner: userRepoList[0].owner,
+                                    name: userRepoList[0].name,
+                                    fullName: userRepoList[0].fullName,
+                                }
+                                : undefined
+                        }
+                    />
+                </Card>
             )}
 
             {voiceToast && (

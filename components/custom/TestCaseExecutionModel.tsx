@@ -35,6 +35,7 @@ import axios from "axios";
 import { UserDetailContext } from "@/context/UserDetailContext";
 import { useContext } from "react";
 import { speakTestSummary } from "@/lib/speechmatics/voiceReadback";
+import AgentTracePanel from "@/components/custom/AgentTracePanel";
 
 type Props = {
     isOpen: boolean;
@@ -125,7 +126,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
     const [isExecuting, setIsExecuting] = useState(false);
     const [results, setResults] = useState<Record<number, RunResult>>({});
     const [selectedDetailId, setSelectedDetailId] = useState<number | null>(null);
-    const [detailTab, setDetailTab] = useState<"script" | "analysis" | "context" | "terminal">("script");
+    const [detailTab, setDetailTab] = useState<"script" | "analysis" | "context" | "trace" | "terminal">("script");
 
     const { userDetail, setUserDetail } = useContext(UserDetailContext);
 
@@ -560,6 +561,16 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                         </button>
                                         <button
                                             type="button"
+                                            onClick={() => setDetailTab("trace")}
+                                            className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-colors ${detailTab === "trace"
+                                                    ? "bg-emerald-100 text-emerald-900 border-emerald-200"
+                                                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                                                }`}
+                                        >
+                                            Agent Trace
+                                        </button>
+                                        <button
+                                            type="button"
                                             onClick={() => setDetailTab("terminal")}
                                             className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-semibold border transition-colors ${detailTab === "terminal"
                                                     ? "bg-gray-900 text-white border-gray-900"
@@ -700,6 +711,10 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                     )}
                                                 </div>
                                             </div>
+                                        )}
+
+                                        {detailTab === "trace" && currentSelectedTestCase && (
+                                            <AgentTracePanel testCaseId={currentSelectedTestCase.id} />
                                         )}
 
                                         {detailTab === "terminal" && (

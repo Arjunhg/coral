@@ -4,7 +4,61 @@ export type VoiceCommand =
   | { type: "RUN_TESTS"; scope: "all" | "failed" | "selected" }
   | { type: "FILTER_RESULTS"; status: VoiceFilterStatus }
   | { type: "CONNECT_REPO" }
+  | { type: "QUERY_DATA"; text: string }
   | { type: "UNKNOWN"; raw: string };
+
+const QUERY_TRIGGERS = [
+  "show",
+  "list",
+  "find",
+  "get",
+  "tell",
+  "give",
+  "ask",
+  "query",
+  "search",
+  "look",
+  "fetch",
+  "what",
+  "which",
+  "how",
+  "where",
+  "why",
+];
+
+const DATA_NOUNS = [
+  "issue",
+  "issues",
+  "ticket",
+  "tickets",
+  "commit",
+  "commits",
+  "pr",
+  "prs",
+  "pull",
+  "request",
+  "requests",
+  "error",
+  "errors",
+  "bug",
+  "bugs",
+  "incident",
+  "sentry",
+  "linear",
+  "github",
+  "slack",
+  "stripe",
+  "datadog",
+  "test",
+  "tests",
+  "failing",
+  "passing",
+  "failure",
+  "user",
+  "users",
+  "customer",
+  "customers",
+];
 
 const STOPWORDS = new Set([
   "a",
@@ -132,6 +186,23 @@ export function parseVoiceCommand(transcript: string): VoiceCommand {
 
   if (hasRunVerb && hasTestWord) {
     return { type: "RUN_TESTS", scope: "all" };
+  }
+
+  const hasQueryTrigger = hasAny(tokenSet, QUERY_TRIGGERS);
+  const hasDataNoun = hasAny(tokenSet, DATA_NOUNS);
+  const isQuestionForm = /^(what|which|how|where|why|who|when)/.test(normalized);
+  const hasJoinCue = /\b(with|and|that have|including|along with)\b/.test(normalized);
+
+  if (
+    (isQuestionForm && hasDataNoun) ||
+    (hasQueryTrigger && hasDataNoun && !hasRunVerb) ||
+    (hasDataNoun && hasJoinCue)
+  ) {
+    const cleaned = raw
+      .replace(/^(hey|hi|hello|please|scriptless|coral)[,\s]+/i, "")
+      .replace(/^(can you|could you|would you|will you)\s+/i, "")
+      .trim();
+    return { type: "QUERY_DATA", text: cleaned };
   }
 
   if (hasFilterVerb && hasFailedWord) {
