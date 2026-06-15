@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -99,6 +99,25 @@ export const agentQueries = pgTable("agent_queries", {
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const coralConnections = pgTable(
+  "coral_connections",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id", { length: 255 }).notNull(),
+    sourceName: varchar("source_name", { length: 100 }).notNull(),
+    status: varchar("status", { length: 50 }).notNull().default("pending"),
+    lastVerifiedAt: timestamp("last_verified_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    userSourceUnique: uniqueIndex("coral_connections_user_source_idx").on(
+      table.userId,
+      table.sourceName
+    ),
+  })
+);
 
 
 export type User = typeof users.$inferSelect;

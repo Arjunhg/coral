@@ -1,7 +1,10 @@
-﻿const CORAL_SIDECAR_URL = process.env.CORAL_SIDECAR_URL;
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const CORAL_SIDECAR_URL = process.env.CORAL_SIDECAR_URL;
 const CORAL_SIDECAR_SECRET = process.env.CORAL_SIDECAR_SECRET;
 
 const DEFAULT_TIMEOUT_MS = 12000;
+const coralTenantStorage = new AsyncLocalStorage<{ tenantId?: string }>();
 
 export type CoralRow = Record<string, unknown>;
 
@@ -39,6 +42,10 @@ function ensureConfigured() {
   }
 }
 
+function getCurrentTenantId(): string | undefined {
+  return coralTenantStorage.getStore()?.tenantId;
+}
+
 async function sidecarFetch(
   path: string,
   init?: RequestInit,
@@ -46,6 +53,7 @@ async function sidecarFetch(
 ) {
   ensureConfigured();
   const sidecarSecret = CORAL_SIDECAR_SECRET!;
+  const tenantId = getCurrentTenantId();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -56,6 +64,7 @@ async function sidecarFetch(
       headers: {
         "Content-Type": "application/json",
         "X-Sidecar-Secret": sidecarSecret,
+        ...(tenantId ? { "X-Coral-Tenant": tenantId } : {}),
         ...(init?.headers || {}),
       },
       signal: controller.signal,
@@ -137,6 +146,17 @@ export const coral = {
     }
   },
 };
+
+export async function withCoralTenant<T>(
+  tenantId: string | null | undefined,
+  fn: () => Promise<T>
+): Promise<T> {
+  if (!tenantId) {
+    return fn();
+  }
+
+  return coralTenantStorage.run({ tenantId }, fn);
+}
 
 export function quote(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return "NULL";
