@@ -1,6 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { coral, CoralError } from "@/lib/coral/client";
+import { coral, CoralError, withCoralTenant } from "@/lib/coral/client";
 import { logAgentQuery, newRunId } from "@/lib/coral/trace-logger";
 
 const MAX_SQL_LEN = 4000;
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   const t0 = performance.now();
 
   try {
-    const rows = await coral.sql(sql, { timeoutMs: 15000 });
+    const rows = await withCoralTenant(userId, () => coral.sql(sql, { timeoutMs: 15000 }));
     const ms = Math.round(performance.now() - t0);
 
     void logAgentQuery({
@@ -100,6 +100,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const available = await coral.isAvailable();
+  const { userId } = await auth();
+  if (!userId) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const available = await withCoralTenant(userId, () => coral.isAvailable());
   return NextResponse.json({ coral_available: available });
 }

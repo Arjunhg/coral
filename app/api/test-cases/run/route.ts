@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { GoogleGenAI } from "@google/genai";
 import { analyzeScreenshot } from "@/lib/featherless/analyzeScreenshot";
 import { db } from "@/db";
@@ -7,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { Browserbase } from "@browserbasehq/sdk";
 import { chromium, Page } from "playwright-core";
-import { coral, quote } from "@/lib/coral/client";
+import { coral, quote, withCoralTenant } from "@/lib/coral/client";
 import { tracedSql } from "@/lib/coral/traced-client";
 import { newRunId } from "@/lib/coral/trace-logger";
 
@@ -506,6 +507,12 @@ async function fetchFailureContext(testCase: {
 }
 
 export async function POST(req: NextRequest) {
+    const { userId } = await auth();
+    if (!userId) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    return withCoralTenant(userId, async () => {
     try {
         const body = await req.json();
         const { testCaseId, baseUrl, mode = "generate", customPrompt = "" } = body;
@@ -938,4 +945,5 @@ async function resilientClick(loc, opts) {
             { status: 500 }
         );
     }
+    });
 }

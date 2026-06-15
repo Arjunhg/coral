@@ -1,22 +1,29 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenAI } from "@google/genai";
-import { coral, CoralError } from "@/lib/coral/client";
+import { coral, CoralError, withCoralTenant } from "@/lib/coral/client";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
-let cachedCatalog: { tables: Array<Record<string, unknown>>; fetchedAt: number } | null = null;
+const cachedCatalogByTenant = new Map<
+  string,
+  { tables: Array<Record<string, unknown>>; fetchedAt: number }
+>();
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 
-async function getCatalog() {
+async function getCatalog(tenantId: string) {
   const now = Date.now();
+  const cachedCatalog = cachedCatalogByTenant.get(tenantId);
   if (cachedCatalog && now - cachedCatalog.fetchedAt < CATALOG_TTL_MS) {
     return cachedCatalog.tables;
   }
 
-  const tables = await coral.listCatalog();
-  cachedCatalog = { tables: tables as Array<Record<string, unknown>>, fetchedAt: now };
-  return cachedCatalog.tables;
+  const tables = await withCoralTenant(tenantId, () => coral.listCatalog());
+  cachedCatalogByTenant.set(tenantId, {
+    tables: tables as Array<Record<string, unknown>>,
+    fetchedAt: now,
+  });
+  return tables as Array<Record<string, unknown>>;
 }
 
 function formatCatalogForPrompt(tables: Array<Record<string, unknown>>) {
@@ -64,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   let catalog: Array<Record<string, unknown>> = [];
   try {
-    catalog = await getCatalog();
+    catalog = await getCatalog(userId);
   } catch (err) {
     return NextResponse.json(
       {

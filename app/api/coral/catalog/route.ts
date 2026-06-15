@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { coral } from "@/lib/coral/client";
+import { coral, withCoralTenant } from "@/lib/coral/client";
 
 export async function GET(req: NextRequest){
     const { userId } = await auth();
@@ -9,7 +9,7 @@ export async function GET(req: NextRequest){
     }
 
     try {
-        const tables = await coral.listCatalog();
+        const tables = await withCoralTenant(userId, () => coral.listCatalog());
         return NextResponse.json({ tables }, { status: 200 });
     } catch (error) {
         return NextResponse.json({ error: "internal server error" }, { status: 500 });

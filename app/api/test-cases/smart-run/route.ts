@@ -3,7 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { TestCasesTable, users } from "@/db/schema";
 import { and, eq, or } from "drizzle-orm";
-import { quote } from "@/lib/coral/client";
+import { quote, withCoralTenant } from "@/lib/coral/client";
 import { tracedSql } from "@/lib/coral/traced-client";
 import { newRunId } from "@/lib/coral/trace-logger";
 
@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
   if (!userId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  return withCoralTenant(userId, async () => {
 
   const { repoId, repoOwner, repoName, withinDays = 7 } = await req.json();
   if (!repoId || !repoOwner || !repoName) {
@@ -244,5 +246,6 @@ LIMIT 1
         : `Coral found recent commits but no file-level signals in the last ${withinDays} days; prioritized recent/failed tests instead.`
       : "Coral did not return recent commit signals; prioritized recently failed tests.",
     coral_used: coralUsed,
+  });
   });
 }

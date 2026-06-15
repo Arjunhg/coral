@@ -12,7 +12,9 @@ const SHARED_SECRET = process.env.SIDECAR_SHARED_SECRET;
 const CORAL_BIN = process.env.CORAL_BIN || "coral";
 const CURL_BIN = process.env.CURL_BIN || "curl";
 const CORAL_CONFIG_DIR = process.env.CORAL_CONFIG_DIR || "/coral-config";
+const TENANT_CONFIG_ROOT = path.join(CORAL_CONFIG_DIR, "users");
 const CONFIG_PATH = path.join(CORAL_CONFIG_DIR, "config.json");
+const TENANT_CONNECTIONS_FILE = "tenant-connections.json";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const MAX_SQL_LEN = 8000; 
 
@@ -29,6 +31,31 @@ async function runCoral(args, timeoutMs = DEFAULT_TIMEOUT_MS) {
     const { stdout, stderr } = await exec(CORAL_BIN, args, {
       timeout: timeoutMs,
       maxBuffer: 32 * 1024 * 1024, // 32MB for large result sets
+    });
+    return { ok: true, stdout, stderr };
+  } catch (err) {
+    return {
+      ok: false,
+      stderr: err.stderr?.toString() || err.message,
+      stdout: err.stdout?.toString() || "",
+      code: err.code,
+    };
+  }
+}
+
+async function runCoralWithConfig(configDir, args, options = {}) {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const extraEnv = options.env ?? {};
+
+  try {
+    const { stdout, stderr } = await exec(CORAL_BIN, args, {
+      timeout: timeoutMs,
+      maxBuffer: 32 * 1024 * 1024,
+      env: {
+        ...process.env,
+        CORAL_CONFIG_DIR: configDir,
+        ...extraEnv,
+      },
     });
     return { ok: true, stdout, stderr };
   } catch (err) {
@@ -84,6 +111,146 @@ function getSplunkProxyConfig(req) {
   }
 
   return { splunkHost, splunkToken };
+}
+
+function sanitizeTenantId(rawTenantId) {
+  const tenantId = String(rawTenantId || "").trim();
+  if (!tenantId) return null;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(tenantId)) {
+    return null;
+  }
+  return tenantId;
+}
+
+function getTenantConfigDir(tenantId) {
+  return path.join(TENANT_CONFIG_ROOT, tenantId);
+}
+
+function getTenantConnectionsPath(configDir) {
+  return path.join(configDir, TENANT_CONNECTIONS_FILE);
+}
+
+function ensureConfigTemplate(configDir) {
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+  }
+
+  const configPath = path.join(configDir, "config.json");
+  if (!fs.existsSync(configPath)) {
+    const defaultConfig = { initializedAt: new Date().toISOString(), version: "1.0.0" };
+    fs.writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2));
+  }
+}
+
+function ensureTenantSeededFromShared(tenantConfigDir) {
+  if (fs.existsSync(tenantConfigDir)) {
+    ensureConfigTemplate(tenantConfigDir);
+    return;
+  }
+
+  fs.mkdirSync(tenantConfigDir, { recursive: true });
+
+  if (fs.existsSync(CORAL_CONFIG_DIR)) {
+    fs.cpSync(CORAL_CONFIG_DIR, tenantConfigDir, {
+      recursive: true,
+      force: true,
+      filter: (sourcePath) => path.basename(sourcePath) !== "users",
+    });
+  }
+
+  ensureConfigTemplate(tenantConfigDir);
+}
+
+function readTenantConnections(configDir) {
+  const filePath = getTenantConnectionsPath(configDir);
+  if (!fs.existsSync(filePath)) {
+    return { sources: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return parsed && typeof parsed === "object" && parsed.sources ? parsed : { sources: {} };
+  } catch {
+    return { sources: {} };
+  }
+}
+
+function writeTenantConnections(configDir, data) {
+  const filePath = getTenantConnectionsPath(configDir);
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+function upsertTenantConnection(configDir, sourceName, status) {
+  const next = readTenantConnections(configDir);
+  next.sources[sourceName] = {
+    scope: "personal",
+    status,
+    last_verified_at: new Date().toISOString(),
+  };
+  writeTenantConnections(configDir, next);
+  return next.sources[sourceName];
+}
+
+async function listConfiguredSources(configDir) {
+  if (!fs.existsSync(configDir)) {
+    return new Set();
+  }
+  const result = await runCoralWithConfig(
+    configDir,
+    [
+      "sql",
+      "--format",
+      "json",
+      `SELECT DISTINCT schema_name AS source_name
+       FROM (
+         SELECT schema_name FROM coral.tables
+         UNION ALL
+         SELECT schema_name FROM coral.table_functions
+       ) configured_sources
+       ORDER BY source_name`,
+    ],
+    { timeoutMs: 8000 }
+  );
+
+  if (!result.ok) {
+    return new Set();
+  }
+
+  try {
+    const rows = JSON.parse(result.stdout || "[]");
+    return new Set(
+      rows
+        .map((row) => String(row.source_name || "").trim())
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+async function resolveCoralConfigForTenant(rawTenantId) {
+  const tenantId = sanitizeTenantId(rawTenantId);
+  if (!tenantId) {
+    return { tenantId: null, configDir: CORAL_CONFIG_DIR, scope: "shared" };
+  }
+
+  const tenantConfigDir = getTenantConfigDir(tenantId);
+  const tenantSources = await listConfiguredSources(tenantConfigDir);
+  if (tenantSources.size > 0) {
+    return { tenantId, configDir: tenantConfigDir, scope: "tenant", tenantSources };
+  }
+
+  return { tenantId, configDir: CORAL_CONFIG_DIR, scope: "shared", tenantSources };
+}
+
+function getTenantIdFromRequest(req) {
+  const rawTenantId = req.headers["x-coral-tenant"];
+  if (!rawTenantId) return null;
+  const tenantId = sanitizeTenantId(rawTenantId);
+  if (!tenantId) {
+    return { error: "invalid_tenant_id" };
+  }
+  return { tenantId };
 }
 
 function normalizeSplunkEntry(entry, mapper) {
@@ -196,6 +363,11 @@ app.get("/health", async (_req, res) => {
 });
 
 app.post("/sql", authenticate, async (req, res) => {
+  const tenant = getTenantIdFromRequest(req);
+  if (tenant?.error) {
+    return res.status(400).json({ error: tenant.error });
+  }
+
   const { sql } = req.body ?? {};
   if (typeof sql !== "string" || sql.length === 0) {
     return res.status(400).json({ error: "sql is required" });
@@ -203,7 +375,9 @@ app.post("/sql", authenticate, async (req, res) => {
   if (sql.length > MAX_SQL_LEN) {
     return res.status(400).json({ error: "sql too long" });
   }
-  const result = await runCoral(["sql", "--format", "json", sql]);
+  const resolved = await resolveCoralConfigForTenant(tenant?.tenantId);
+  console.log(`[sidecar][tenant:${resolved.tenantId ?? "shared"}][scope:${resolved.scope}] /sql`);
+  const result = await runCoralWithConfig(resolved.configDir, ["sql", "--format", "json", sql]);
   if (!result.ok) {
     return res.status(422).json({ error: "coral_query_failed", detail: result.stderr });
   }
@@ -215,8 +389,15 @@ app.post("/sql", authenticate, async (req, res) => {
   }
 });
 
-app.get("/list-catalog", authenticate, async (_req, res) => {
-  const result = await runCoral([
+app.get("/list-catalog", authenticate, async (req, res) => {
+  const tenant = getTenantIdFromRequest(req);
+  if (tenant?.error) {
+    return res.status(400).json({ error: tenant.error });
+  }
+
+  const resolved = await resolveCoralConfigForTenant(tenant?.tenantId);
+  console.log(`[sidecar][tenant:${resolved.tenantId ?? "shared"}][scope:${resolved.scope}] /list-catalog`);
+  const result = await runCoralWithConfig(resolved.configDir, [
     "sql",
     "--format",
     "json",
@@ -259,9 +440,16 @@ app.get("/list-catalog", authenticate, async (_req, res) => {
 });
 
 app.get("/list-columns", authenticate, async (req, res) => {
+  const tenant = getTenantIdFromRequest(req);
+  if (tenant?.error) {
+    return res.status(400).json({ error: tenant.error });
+  }
+
   const { schema, table } = req.query;
   if (!schema || !table) return res.status(400).json({ error: "schema and table required" });
-  const result = await runCoral([
+  const resolved = await resolveCoralConfigForTenant(tenant?.tenantId);
+  console.log(`[sidecar][tenant:${resolved.tenantId ?? "shared"}][scope:${resolved.scope}] /list-columns ${schema}.${table}`);
+  const result = await runCoralWithConfig(resolved.configDir, [
     "sql",
     "--format",
     "json",
@@ -293,6 +481,107 @@ app.get("/list-columns", authenticate, async (req, res) => {
     return res.status(422).json({ error: "columns_failed", detail: result.stderr });
   }
   res.json({ columns: JSON.parse(result.stdout || "[]") });
+});
+
+app.post("/provision", authenticate, async (req, res) => {
+  const { tenant_id: rawTenantId, source, vars } = req.body ?? {};
+  const tenantId = sanitizeTenantId(rawTenantId);
+  if (!tenantId) {
+    return res.status(400).json({ error: "invalid_tenant_id" });
+  }
+  if (typeof source !== "string" || !/^[A-Za-z0-9_-]+$/.test(source)) {
+    return res.status(400).json({ error: "invalid_source" });
+  }
+  if (!vars || typeof vars !== "object" || Array.isArray(vars)) {
+    return res.status(400).json({ error: "vars must be an object" });
+  }
+
+  const sourceFile = path.join(process.cwd(), "coral-sources", `${source}.yaml`);
+  if (!fs.existsSync(sourceFile)) {
+    return res.status(404).json({ error: "source_manifest_not_found" });
+  }
+
+  const tenantConfigDir = getTenantConfigDir(tenantId);
+  ensureTenantSeededFromShared(tenantConfigDir);
+  console.log(`[sidecar][tenant:${tenantId}][scope:tenant] /provision ${source}`);
+
+  const envVars = Object.fromEntries(
+    Object.entries(vars)
+      .filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && value !== null && value !== undefined)
+      .map(([key, value]) => [key, String(value)])
+  );
+
+  await runCoralWithConfig(tenantConfigDir, ["source", "remove", source], {
+    timeoutMs: 5000,
+  });
+
+  const addResult = await runCoralWithConfig(tenantConfigDir, ["source", "add", "--file", sourceFile], {
+    env: envVars,
+    timeoutMs: 30000,
+  });
+  if (!addResult.ok) {
+    return res.status(422).json({ error: "provision_add_failed", detail: addResult.stderr });
+  }
+
+  const testResult = await runCoralWithConfig(tenantConfigDir, ["source", "test", source], {
+    timeoutMs: 30000,
+  });
+  if (!testResult.ok) {
+    upsertTenantConnection(tenantConfigDir, source, "failed");
+    return res.status(422).json({ error: "provision_test_failed", detail: testResult.stderr });
+  }
+
+  const connection = upsertTenantConnection(tenantConfigDir, source, "connected");
+  const configuredSources = [...(await listConfiguredSources(tenantConfigDir))];
+
+  res.json({
+    ok: true,
+    tenant_id: tenantId,
+    source,
+    status: connection.status,
+    last_verified_at: connection.last_verified_at,
+    configured_sources: configuredSources,
+  });
+});
+
+app.get("/connections", authenticate, async (req, res) => {
+  const tenantId = sanitizeTenantId(req.query.tenant_id);
+  if (!tenantId) {
+    return res.status(400).json({ error: "invalid_tenant_id" });
+  }
+
+  const sharedSources = await listConfiguredSources(CORAL_CONFIG_DIR);
+  const tenantConfigDir = getTenantConfigDir(tenantId);
+  const tenantSources = await listConfiguredSources(tenantConfigDir);
+  const tenantMetadata = readTenantConnections(tenantConfigDir);
+
+  const allSources = new Set([
+    ...sharedSources,
+    ...tenantSources,
+    ...Object.keys(tenantMetadata.sources || {}),
+  ]);
+
+  const connections = [...allSources]
+    .sort((a, b) => a.localeCompare(b))
+    .map((sourceName) => {
+      const personalMeta = tenantMetadata.sources?.[sourceName];
+      const scope =
+        personalMeta?.scope === "personal" || (!sharedSources.has(sourceName) && tenantSources.has(sourceName))
+          ? "personal"
+          : "inherited";
+      const active_via = tenantSources.has(sourceName) ? "tenant" : sharedSources.has(sourceName) ? "shared" : null;
+
+      return {
+        source_name: sourceName,
+        scope,
+        active_via,
+        status: personalMeta?.status ?? "connected",
+        last_verified_at: personalMeta?.last_verified_at ?? null,
+      };
+    });
+
+  console.log(`[sidecar][tenant:${tenantId}][scope:${tenantSources.size > 0 ? "tenant" : "shared"}] /connections`);
+  res.json({ tenant_id: tenantId, connections });
 });
 
 app.get("/debug/volume", authenticate, async (_req, res) => {
