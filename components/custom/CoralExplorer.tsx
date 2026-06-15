@@ -229,6 +229,7 @@ export default function CoralExplorer({
                 "Which failing tests touch the checkout route?",
                 "List recent commits to authentication files",
                 "How many Sentry errors hit /api/users today?",
+                "Show recent Splunk error events for the checkout service",
               ].map((example) => (
                 <button
                   key={example}
@@ -245,7 +246,7 @@ export default function CoralExplorer({
               <Input
                 value={nlQuery}
                 onChange={(e) => setNlQuery(e.target.value)}
-                placeholder="e.g. show me failing tests with open Linear issues"
+                placeholder="e.g. show me recent Splunk error events for checkout"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();

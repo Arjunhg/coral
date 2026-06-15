@@ -34,7 +34,12 @@ function formatCatalogForPrompt(tables: Array<Record<string, unknown>>) {
         const requiredHint = required ? ` (REQUIRED FILTERS: ${required})` : "";
         const tableName = String(table.table_name ?? "unknown_table");
         const description = String(table.description ?? "No description");
-        return `- ${schema}.${tableName}${requiredHint}: ${description}`;
+        const relationType = String(table.relation_type ?? "table");
+        const callHint =
+          relationType === "table_function"
+            ? " (TABLE FUNCTION: call in FROM using named args)"
+            : "";
+        return `- ${schema}.${tableName}${callHint}${requiredHint}: ${description}`;
       });
       return `Schema "${schema}":\n${lines.join("\n")}`;
     })
@@ -105,7 +110,9 @@ Rules:
 6. Default LIMIT to 25 unless the user specifies a number.
 7. Quote string literals with single quotes; escape internal quotes by doubling.
 8. Use fully qualified table names (schema.table).
-9. If the question cannot be answered with these tables, output exactly: -- CANNOT_ANSWER
+9. For table functions, call them in the FROM clause using named arguments, for example: SELECT * FROM schema.function(arg_name => 'value').
+10. For splunk.search_results, pass a full Splunk SPL string in the search argument. When the user asks for logs or events, build a bounded SPL search and include "| fields _time host source sourcetype _raw index splunk_server | head 25" inside that string.
+11. If the question cannot be answered with these tables, output exactly: -- CANNOT_ANSWER
 
 User question: ${text.trim()}
 
@@ -151,7 +158,7 @@ SQL:`;
       {
         error: "not_answerable",
         detail: "The question cannot be answered with the connected sources.",
-        suggestion: "Try asking about tests, GitHub issues, commits, or any connected source.",
+        suggestion: "Try asking about tests, GitHub issues, commits, Splunk logs, or any connected source.",
       },
       { status: 422 }
     );
