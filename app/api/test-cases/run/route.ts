@@ -80,7 +80,7 @@ async function readGithubFile({
 }
 
 type FailureContextItem = {
-    kind: "issue" | "commit" | "sentry" | "linear";
+    kind: "issue" | "commit" | "sentry" | "linear" | "splunk";
     source: string;
     title: string;
     url: string | null;
@@ -120,6 +120,10 @@ function resolveColumn(columns: Set<string>, candidates: string[]): string | nul
 
 function selectOrNull(column: string | null, alias: string): string {
     return column ? `${column} AS ${alias}` : `NULL AS ${alias}`;
+}
+
+function quoteSplunkPhrase(value: string): string {
+    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function buildRepoFilters(columns: Set<string>, owner: string, repo: string) {
@@ -443,6 +447,58 @@ async function fetchFailureContext(testCase: {
                     metadata: { state: row.state },
                 });
             }
+        }
+    }
+
+    // 6. Splunk — recent error or failure events around the repo/route signal
+    if (availableSchemas.has("splunk")) {
+        const splunkTerms = [repo, routeKeyword, titleKeyword]
+            .map((term) => term?.trim())
+            .filter((term): term is string => Boolean(term))
+            .slice(0, 3);
+        const signalClause =
+            splunkTerms.length > 0
+                ? splunkTerms.map((term) => quoteSplunkPhrase(term)).join(" OR ")
+                : quoteSplunkPhrase("error");
+        const splunkSearch =
+            `search index=* (${signalClause}) (error OR exception OR fail OR failed OR fatal) ` +
+            `earliest=-60m latest=now | fields _time host source sourcetype _raw index splunk_server | head 5`;
+        const splunkSql = `
+            SELECT _time, host, source, sourcetype, _raw, index, splunk_server
+            FROM splunk.search_results(search => ${quote(splunkSearch)})
+            LIMIT 5
+        `.trim();
+
+        const splunkT0 = performance.now();
+        const splunkRows = await tracedSql(splunkSql, {
+            testCaseId: testCase.id,
+            runId,
+            source: "splunk.search_results",
+            agentRole: "failure_enricher",
+        });
+        ctx.queries_run.push({
+            source: "splunk.search_results",
+            sql: splunkSql,
+            rows: splunkRows.length,
+            ms: Math.round(performance.now() - splunkT0),
+        });
+
+        for (const row of splunkRows) {
+            const rawMessage = String(row._raw ?? "").replace(/\s+/g, " ").trim();
+            ctx.items.push({
+                kind: "splunk",
+                source: "splunk",
+                title: rawMessage.slice(0, 220) || "Splunk log event",
+                url: null,
+                timestamp: row._time ? String(row._time) : null,
+                metadata: {
+                    host: row.host,
+                    index: row.index,
+                    source: row.source,
+                    sourcetype: row.sourcetype,
+                    splunk_server: row.splunk_server,
+                },
+            });
         }
     }
 

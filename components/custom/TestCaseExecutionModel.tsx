@@ -665,12 +665,21 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                                             item.kind === "commit" ? "bg-emerald-100 text-emerald-800" :
                                                                                 item.kind === "sentry" ? "bg-rose-100 text-rose-800" :
                                                                                     item.kind === "linear" ? "bg-violet-100 text-violet-800" :
+                                                                                        item.kind === "splunk" ? "bg-orange-100 text-orange-800" :
                                                                                         "bg-gray-100 text-gray-800"
                                                                         }`}
                                                                 >
                                                                     {item.kind}
                                                                 </Badge>
-                                                                <span className="text-[10px] text-gray-500 uppercase">{item.source}</span>
+                                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${
+                                                                    item.source === "github" ? "bg-slate-100 text-slate-700" :
+                                                                        item.source === "sentry" ? "bg-rose-100 text-rose-700" :
+                                                                            item.source === "linear" ? "bg-violet-100 text-violet-700" :
+                                                                                item.source === "splunk" ? "bg-orange-100 text-orange-700" :
+                                                                                    "bg-gray-100 text-gray-600"
+                                                                }`}>
+                                                                    {item.source}
+                                                                </span>
                                                                 {item.timestamp && (
                                                                     <span className="text-[10px] text-gray-400 ml-auto">
                                                                         {new Date(item.timestamp).toLocaleDateString()}

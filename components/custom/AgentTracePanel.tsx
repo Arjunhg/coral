@@ -50,6 +50,14 @@ const STATUS_STYLES: Record<string, string> = {
   timeout: "bg-amber-100 text-amber-800",
 };
 
+const SOURCE_STYLES: Record<string, string> = {
+  github: "bg-slate-100 text-slate-700",
+  sentry: "bg-rose-100 text-rose-700",
+  linear: "bg-violet-100 text-violet-700",
+  splunk: "bg-orange-100 text-orange-700",
+  scriptless: "bg-sky-100 text-sky-700",
+};
+
 export default function AgentTracePanel({ testCaseId }: { testCaseId: number }) {
   const [runs, setRuns] = useState<TraceRun[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -171,6 +179,7 @@ export default function AgentTracePanel({ testCaseId }: { testCaseId: number }) 
                 <div className="divide-y divide-gray-100">
                   {run.queries.map((query) => {
                     const isQueryExpanded = expandedQueries.has(query.id);
+                    const sourceKey = query.source.split(".")[0] || query.source;
                     return (
                       <div key={query.id} className="px-3 py-2 hover:bg-gray-50">
                         <button
@@ -190,6 +199,13 @@ export default function AgentTracePanel({ testCaseId }: { testCaseId: number }) 
                             {query.agentRole}
                           </Badge>
                           <Database className="h-3 w-3 text-gray-400" />
+                          <span
+                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase ${
+                              SOURCE_STYLES[sourceKey] ?? "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {sourceKey}
+                          </span>
                           <span className="text-[11px] font-mono text-gray-700 truncate">{query.source}</span>
                           <div className="ml-auto flex items-center gap-2 text-[10px] text-gray-500">
                             <span>{query.rowsReturned} rows</span>

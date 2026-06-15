@@ -21,17 +21,13 @@ export async function GET(
 
   const cu = await currentUser();
   const email = cu?.primaryEmailAddress?.emailAddress;
-  if (!email) {
-    return NextResponse.json({ error: "user_not_found" }, { status: 404 });
-  }
-
-  const [localUser] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email));
-
-  if (!localUser) {
-    return NextResponse.json({ error: "user_not_found" }, { status: 404 });
+  let localUserId: number | null = null;
+  if (email) {
+    const [localUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email));
+    localUserId = localUser?.id ?? null;
   }
 
   const [testCase] = await db
@@ -43,7 +39,10 @@ export async function GET(
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
 
-  if (testCase.userId !== String(localUser.id)) {
+  const isOwner =
+    (localUserId !== null && testCase.userId === String(localUserId)) ||
+    testCase.userId === userId;
+  if (!isOwner) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

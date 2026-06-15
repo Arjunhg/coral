@@ -11,6 +11,7 @@ export type CoralTableSummary = {
   description: string;
   required_filters: string;
   guide: string;
+  relation_type?: "table" | "table_function" | string;
 };
 
 export type CoralColumn = {

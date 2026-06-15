@@ -1,6 +1,6 @@
 ﻿# Scriptless.ai + Coral
 
-AI-first browser test automation for GitHub repos, now with Coral-powered federated context, explainable query traces, natural language SQL exploration, and smart test prioritization.
+AI-first browser test automation for GitHub repos, now with Coral-powered federated context, explainable query traces, natural language SQL exploration, smart test prioritization, and Splunk-backed failure context.
 
 ## What This Project Does
 
@@ -9,7 +9,7 @@ Scriptless helps teams:
 - generate test cases with AI
 - execute tests in Browserbase cloud browsers
 - diagnose failures with screenshot + vision analysis
-- enrich failures with real cross-system context via Coral (GitHub, Sentry, Linear)
+- enrich failures with real cross-system context via Coral (GitHub, Sentry, Linear, Splunk)
 
 The recent updates make the system significantly more explainable and more useful for daily engineering workflows.
 
@@ -21,6 +21,16 @@ The recent updates make the system significantly more explainable and more usefu
 4. Coral Explorer (NL -> SQL -> Results)
 5. Voice data queries (same result path as typed queries)
 6. Smart Run (prioritize tests based on recent changes)
+7. Splunk source support in the shared Coral sidecar
+
+## Guidance
+
+This repo is currently framed for the **Platform & Developer Experience** track.
+
+Why it fits:
+- failing browser tests immediately pull related operational context from Splunk
+- the same cross-source data is explorable through Coral Explorer and voice queries
+- judges can use the shared/demo Coral sidecar without connecting their own Splunk first
 
 ## Architecture
 
@@ -41,7 +51,7 @@ flowchart LR
     N --> CClient[lib/coral/client.ts]
     CClient --> Sidecar[Coral Sidecar HTTP service]
     Sidecar --> CoralCLI[coral CLI]
-    CoralCLI --> Sources[(GitHub/Sentry/Linear/etc)]
+    CoralCLI --> Sources[(GitHub/Sentry/Linear/Splunk/etc)]
   end
 
   N --> Expose["/api/coral/expose/*"]
@@ -90,19 +100,22 @@ How it differs from the standard Coral routes:
 
 If you do not need Coral to query Scriptless data, you can remove `/api/coral/expose/*` and the app will still work normally. But you still need your own sidecar implementation.
 
+For the Splunk-specific architecture diagram, see [SPLUNK_ARCHITECTURE.md](SPLUNK_ARCHITECTURE.md).
+
 ## Usage Scope (Individual or Single-Operator Organization)
 
-This project currently targets **individual developers** or **single-operator organization setups**.
+This Milestone A implementation currently targets **individual developers** or **single-operator organization setups** with a shared Coral sidecar config.
 
 Why:
 - Coral connects to data sources using **personal access tokens** (for example GitHub, Linear, Sentry).
+- Splunk is configured once on the sidecar host with operator-owned `SPLUNK_HOST` and `SPLUNK_TOKEN`.
 - Those tokens are tied to a single user account and are provisioned manually.
 - Coral is a compiled Rust CLI, so it must run in a **separate sidecar** process with a local config directory.
 - The sidecar persists source configuration and secrets on disk, which is not multi-tenant by default.
 
 What this means in practice:
 - You (the operator) configure sources once on the sidecar host.
-- All users of this app consume the same shared, operator-owned context.
+- All users of this app consume the same shared, operator-owned context, including shared/demo Splunk data.
 - End users do not configure Coral themselves.
 
 Group or team-wide Coral setups can be supported with additional infrastructure (separate sidecars per team, centralized secret management, and strict tenant isolation). That is outside the scope of this project today.
@@ -119,7 +132,7 @@ Each section includes:
 ## 1) Related Context Tab (failed tests)
 
 ### How it works
-When a test fails, `app/api/test-cases/run/route.ts` runs Coral queries to fetch related items from connected sources (for example issues, commits, and errors) and stores them in `failure_context`.
+When a test fails, `app/api/test-cases/run/route.ts` runs Coral queries to fetch related items from connected sources (for example GitHub issues, commits, Sentry errors, Linear issues, and Splunk log events) and stores them in `failure_context`.
 
 The execution modal shows these in the **Related Context** tab.
 
@@ -130,7 +143,7 @@ Failure investigation gets immediate cross-system signals instead of only screen
 1. Run a test that fails.
 2. Open test details.
 3. Open **Related Context**.
-4. Confirm items appear (issues, commits, sentry errors, linear tasks depending on configured sources).
+4. Confirm items appear (issues, commits, sentry errors, linear tasks, and/or Splunk events depending on configured sources).
 
 ---
 
@@ -190,7 +203,7 @@ Teams can query federated engineering data without writing SQL from scratch.
 
 ### How to test
 1. Open Workspace and click **Open Explorer**.
-2. Ask: `Show me failing tests with open Linear issues for the checkout repo`.
+2. Ask: `Show me recent Splunk error events for the checkout service`.
 3. Review generated SQL.
 4. Run it and verify table results render.
 
@@ -208,7 +221,7 @@ One parser and one data path for both modalities. Faster demos and faster operat
 ### How to test
 1. Start voice mode.
 2. Speak a data query similar to the text query above.
-3. Verify Explorer opens and runs the query path.
+3. Verify Explorer opens and runs the query path, including Splunk-oriented queries.
 
 ---
 
@@ -266,14 +279,21 @@ You can run sidecar on Railway or EC2.
 #### Sidecar
 - `SIDECAR_SHARED_SECRET` (must match app secret)
 - `CORAL_CONFIG_DIR=/coral-config`
+- `SPLUNK_HOST` (sidecar host only; never expose to the Next.js app)
+- `SPLUNK_TOKEN` (sidecar host only; never expose to the Next.js app)
 - optionally `CORAL_BIN` (default `coral`)
 
 ## Sidecar on Railway
 
 1. Deploy sidecar service using `sidecar/Dockerfile`.
 2. Set environment variables in Railway.
-3. Ensure port binding works (`PORT`).
-4. Validate:
+3. Add the Splunk source on the sidecar host:
+   ```bash
+   coral source add --file ./coral-sources/splunk.yaml
+   coral source test splunk
+   ```
+4. Ensure port binding works (`PORT`).
+5. Validate:
    - `GET /health`
    - authenticated `GET /list-catalog`
 
@@ -298,6 +318,22 @@ You can run sidecar on Railway or EC2.
    ```bash
    curl http://<host>:3000/health
    ```
+5. Add and validate Splunk:
+   ```bash
+   coral source add --file ./coral-sources/splunk.yaml
+   coral source test splunk
+   coral sql "SELECT name, datatype, total_event_count FROM splunk.indexes LIMIT 5"
+   ```
+
+### Splunk Source Helper
+
+If `sidecar/.env.local` already has `SPLUNK_HOST` and `SPLUNK_TOKEN`, run:
+
+```bash
+npm run coral:splunk:validate
+```
+
+This loads the env vars, adds `coral-sources/splunk.yaml`, runs `coral source test splunk`, and executes a few sample SQL queries.
 
 ### EC2 Sidecar (Redacted)
 
@@ -365,6 +401,11 @@ SPEECHMATICS_API_KEY
 - Ownership check mismatch (`test_cases.user_id` format mismatch).
 - Ensure route accepts both local user id and Clerk id where needed.
 
+### 7) Splunk source fails on `https://localhost:8089`
+- Local Splunk Enterprise commonly uses a self-signed TLS certificate.
+- Coral does not skip TLS verification for HTTP sources.
+- Trust the Splunk certificate on the sidecar host or point `SPLUNK_HOST` at a trusted TLS endpoint, then rerun `npm run coral:splunk:validate`.
+
 ## Suggested Demo Flow
 
 Use this flow to show key value quickly:
@@ -374,6 +415,7 @@ Use this flow to show key value quickly:
 3. Show **Agent Trace** and expand query history.
 4. Show **Failure Analysis** referencing real context signals.
 5. Open **Coral Explorer**, ask a natural language query, run generated SQL.
+   - Good demo prompt: `show recent Splunk error events for checkout`
 6. Trigger same query via voice and show identical result path.
 7. Use **Smart Run** and execute prioritized tests.
 8. Open `coral-sources/scriptless.yaml` and explain bring-your-own-Coral source integration.
@@ -394,10 +436,15 @@ Use this flow to show key value quickly:
 
 - [ ] Sidecar health endpoint returns version
 - [ ] `/api/coral/query` GET reports available
+- [ ] `coral.tables` and sidecar `/list-catalog` include `splunk.*`
+- [ ] `coral.columns` and sidecar `/list-columns` resolve Splunk columns
 - [ ] Failing test stores and displays Related Context
+- [ ] Related Context shows at least one Splunk event on a failing run
 - [ ] Failure Analysis includes context-aware references
 - [ ] Agent Trace shows grouped query runs
+- [ ] Agent Trace records `splunk.search_results` when Splunk enrichment runs
 - [ ] Coral Explorer can generate and run SQL
+- [ ] Coral Explorer can answer a Splunk log query
 - [ ] Voice query opens and runs Explorer pipeline
 - [ ] Smart Run returns prioritized tests and launches queue
 - [ ] Scriptless source can be added with `scriptless.yaml`
