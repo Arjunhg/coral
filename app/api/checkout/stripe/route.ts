@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
+import { pendoTrackServer } from '@/lib/pendo/track';
 
 export async function POST(req: Request) {
   try {
@@ -20,6 +21,12 @@ export async function POST(req: Request) {
       mode: 'subscription',
       success_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard?success=true`,
       cancel_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard?canceled=true`,
+    });
+
+    await pendoTrackServer("stripe_checkout_initiated", {
+      price_id: priceId,
+      session_id: session.id,
+      mode: "subscription",
     });
 
     return NextResponse.json({ sessionId: session.id, url: session.url });

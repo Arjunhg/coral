@@ -25,6 +25,18 @@ function Provider({
         console.log("Result", result);
         setUserDetail(result.data?.user);
 
+        try {
+            const createdUser = result.data?.user;
+            if (createdUser?.id && !localStorage.getItem(`pendo_tracked_user_${createdUser.id}`)) {
+                localStorage.setItem(`pendo_tracked_user_${createdUser.id}`, "1");
+                (window as any).pendo?.track("user_account_created", {
+                    user_email: user?.primaryEmailAddress?.emailAddress || "",
+                    user_name: user?.fullName || "",
+                    initial_credits: createdUser?.credits ?? 1000,
+                });
+            }
+        } catch (e) { /* ignore tracking errors */ }
+
     }
 
     return (

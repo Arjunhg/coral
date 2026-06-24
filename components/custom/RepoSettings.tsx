@@ -40,6 +40,16 @@ function RepoSettings({ repo, setReload }: props) {
         });
 
         console.log(result?.data);
+
+        try {
+            (window as any).pendo?.track("repository_settings_saved", {
+                repo_id: repo.repoId,
+                has_target_domain: Boolean(repoSettings.targetDomain.trim()),
+                has_global_instruction: Boolean(repoSettings.globalInstruction.trim()),
+                target_domain: repoSettings.targetDomain.trim().substring(0, 100),
+            });
+        } catch (e) { /* ignore tracking errors */ }
+
         setIsOpen(false);
         setReload();
 

@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { apiKeys, users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import crypto from "node:crypto";
+import { pendoTrackServer } from "@/lib/pendo/track";
 
 function generateApiKey(): { full: string; prefix: string; hash: string } {
   const raw = crypto.randomBytes(32).toString("base64url");
@@ -40,6 +41,11 @@ export async function POST(_req: NextRequest) {
     keyPrefix: prefix,
     label: "coral-source",
   });
+
+  await pendoTrackServer("api_key_generated", {
+    key_prefix: prefix,
+    label: "coral-source",
+  }, userId);
 
   return NextResponse.json({
     key: full,

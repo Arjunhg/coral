@@ -11,6 +11,7 @@ import { chromium, Page } from "playwright-core";
 import { coral, quote, withCoralTenant } from "@/lib/coral/client";
 import { tracedSql } from "@/lib/coral/traced-client";
 import { newRunId } from "@/lib/coral/trace-logger";
+import { pendoTrackServer } from "@/lib/pendo/track";
 
 const ai = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY!,
@@ -898,6 +899,19 @@ async function resilientClick(loc, opts) {
             } else {
                 failureContext = await coralCtxPromise;
             }
+
+            await pendoTrackServer("failure_context_enriched", {
+                test_case_id: testCase.id,
+                coral_available: failureContext.coral_available,
+                context_items_count: failureContext.items.length,
+                queries_run_count: failureContext.queries_run.length,
+                has_github_issues: failureContext.items.some(i => i.kind === "issue"),
+                has_github_commits: failureContext.items.some(i => i.kind === "commit"),
+                has_sentry_errors: failureContext.items.some(i => i.kind === "sentry"),
+                has_linear_issues: failureContext.items.some(i => i.kind === "linear"),
+                has_splunk_events: failureContext.items.some(i => i.kind === "splunk"),
+                has_vision_analysis: Boolean(visionAnalysis),
+            }, userId);
 
             // Clean up session and browser if still active
             if (browser) {

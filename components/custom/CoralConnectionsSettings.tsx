@@ -64,6 +64,13 @@ export default function CoralConnectionsSettings() {
       setSplunkToken("");
       setSuccess("Splunk connected for your account.");
       await loadConnections();
+
+      try {
+        (window as any).pendo?.track("splunk_connection_created", {
+          source: "splunk",
+          success: true,
+        });
+      } catch (e) { /* ignore tracking errors */ }
     } catch (err: any) {
       setError(err.response?.data?.detail || err.response?.data?.error || err.message);
     } finally {
