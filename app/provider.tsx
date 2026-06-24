@@ -14,6 +14,14 @@ function Provider({
     const [userDetail, setUserDetail] = useState<any>();
 
     useEffect(() => {
+        pendo.initialize({
+            visitor: {
+                id: ''
+            }
+        });
+    }, []);
+
+    useEffect(() => {
         if (user) {
             CreateNewUser();
         }
@@ -23,8 +31,20 @@ function Provider({
         const result = await axios.post('/api/users', {});
 
         console.log("Result", result);
-        setUserDetail(result.data?.user);
+        const userData = result.data?.user;
+        setUserDetail(userData);
 
+        if (userData) {
+            pendo.identify({
+                visitor: {
+                    id: String(userData.id),
+                    email: userData.email,
+                    full_name: userData.name,
+                    createdAt: userData.createdAt,
+                    credits: userData.credits
+                }
+            });
+        }
     }
 
     return (
