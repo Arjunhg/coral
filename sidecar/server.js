@@ -253,6 +253,30 @@ function getTenantIdFromRequest(req) {
   return { tenantId };
 }
 
+const CORAL_SOURCES_DIR = process.env.CORAL_SOURCES_DIR || "";
+
+function resolveSourceManifestPath(source) {
+  const candidates = [
+    // Explicit override via env var (highest priority)
+    ...(CORAL_SOURCES_DIR ? [path.join(CORAL_SOURCES_DIR, `${source}.yaml`)] : []),
+    // Inside the coral config directory
+    path.join(CORAL_CONFIG_DIR, "coral-sources", `${source}.yaml`),
+    path.join(CORAL_CONFIG_DIR, "sources", `${source}.yaml`),
+    // Relative to sidecar cwd
+    path.join(process.cwd(), "coral-sources", `${source}.yaml`),
+    path.join(process.cwd(), "..", "coral-sources", `${source}.yaml`),
+    // Docker / absolute paths
+    path.join("/app", "coral-sources", `${source}.yaml`),
+    path.join("/coral-sources", `${source}.yaml`),
+  ];
+
+  const found = candidates.find((candidate) => fs.existsSync(candidate)) || null;
+  if (!found) {
+    console.error(`[sidecar] source_manifest_not_found for "${source}". Searched:\n${candidates.map(c => `  - ${c}`).join("\n")}`);
+  }
+  return found;
+}
+
 function normalizeSplunkEntry(entry, mapper) {
   const content = entry?.content && typeof entry.content === "object" ? entry.content : {};
   return mapper(entry, content);
@@ -496,8 +520,8 @@ app.post("/provision", authenticate, async (req, res) => {
     return res.status(400).json({ error: "vars must be an object" });
   }
 
-  const sourceFile = path.join(process.cwd(), "coral-sources", `${source}.yaml`);
-  if (!fs.existsSync(sourceFile)) {
+  const sourceFile = resolveSourceManifestPath(source);
+  if (!sourceFile) {
     return res.status(404).json({ error: "source_manifest_not_found" });
   }
 
@@ -678,6 +702,22 @@ try {
     const defaultConfig = { initializedAt: new Date().toISOString(), version: "1.0.0" };
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2));
     console.log(`Initialized default config template at ${CONFIG_PATH}`);
+  }
+
+  // Auto-seed coral-sources into CORAL_CONFIG_DIR if they exist locally but not in config dir
+  const localSourcesDirs = [
+    path.join(process.cwd(), "coral-sources"),
+    path.join(process.cwd(), "..", "coral-sources"),
+  ];
+  const configSourcesDir = path.join(CORAL_CONFIG_DIR, "coral-sources");
+  if (!fs.existsSync(configSourcesDir)) {
+    for (const srcDir of localSourcesDirs) {
+      if (fs.existsSync(srcDir)) {
+        fs.cpSync(srcDir, configSourcesDir, { recursive: true });
+        console.log(`Seeded coral-sources from ${srcDir} → ${configSourcesDir}`);
+        break;
+      }
+    }
   }
 } catch (error) {
   console.error("Failed to initialize volume paths:", error);

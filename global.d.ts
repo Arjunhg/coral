@@ -3,3 +3,4 @@ interface Window {
     trackAgent: (eventType: string, metadata: object) => void;
   };
 }
+declare var pendo: any;
