@@ -2,7 +2,8 @@
 import { useUser } from '@clerk/nextjs';
 import { UserDetailContext } from '@/context/UserDetailContext';
 import axios from 'axios';
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation';
 
 function Provider({
     children,
@@ -12,14 +13,21 @@ function Provider({
 
     const { user } = useUser();
     const [userDetail, setUserDetail] = useState<any>();
+    const pendoInitialized = useRef(false);
+    const pathname = usePathname();
 
     useEffect(() => {
-        pendo.initialize({
-            visitor: {
-                id: ''
-            }
-        });
+        if(!pendoInitialized.current){
+            pendoInitialized.current = true;
+            pendo.initialize({ visitor: { id: 'anonymous-' + Date.now() } });
+        }
     }, []);
+    
+    useEffect(() => {
+        if(pendoInitialized.current){
+            pendo.pageLoad();
+        }
+    }, [pathname]);
 
     useEffect(() => {
         if (user) {
@@ -30,7 +38,6 @@ function Provider({
     const CreateNewUser = async () => {
         const result = await axios.post('/api/users', {});
 
-        console.log("Result", result);
         const userData = result.data?.user;
         setUserDetail(userData);
 
@@ -44,6 +51,13 @@ function Provider({
                     credits: userData.credits
                 }
             });
+
+            if(result.data?.isNewUser){
+                (window as any).pendo?.track("user_account_created", {
+                    isNewUser: true,
+                    userId: userData.id,
+                })
+            }
         }
     }
 
