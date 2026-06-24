@@ -6,7 +6,6 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import EmptyWorkspace from './EmptyWorkspace';
 import axios from 'axios';
-import { useRouter } from 'next/navigation';
 import RepoDialog from './RepoDialog';
 import UserRepoList from './UserRepoList';
 import VoiceCommandButton from '@/components/voice/VoiceCommandButton';
@@ -34,7 +33,6 @@ function WorkspaceBody() {
 
 
     const { userDetail } = useContext(UserDetailContext);
-    const router = useRouter()
     const [token, setToken] = useState('');
     const [userRepoList, setUserRepoList] = useState<UserRepo[]>([]);
     const [loading, setLoading] = useState(true);
@@ -63,7 +61,7 @@ function WorkspaceBody() {
     }
 
     const OnAddRepo = async () => {
-        router.push('/api/github');
+        window.location.assign('/api/github');
     }
 
     const showVoiceToast = (message: string) => {
