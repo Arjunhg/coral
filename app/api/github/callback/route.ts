@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { pendoTrackServer } from "@/lib/pendo/track";
 
 export async function GET(req: NextRequest) {
     const code = req.nextUrl.searchParams.get('code');
@@ -34,6 +35,11 @@ export async function GET(req: NextRequest) {
         maxAge: 60 * 60 * 24 * 30, //30 days
         path: '/',
         sameSite: 'lax'
+    });
+
+    await pendoTrackServer("github_connected", {
+        success: true,
+        token_expiry_days: 30,
     });
 
     return response;

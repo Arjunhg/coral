@@ -133,10 +133,11 @@ export default function CoralExplorer({
     }
   };
 
-  const handleRun = async (sqlToRun: string): Promise<void> => {
+  const handleRun = async (sqlToRun: string, isDirectSql = false): Promise<boolean> => {
     setError(null);
     setRunning(true);
     setRows(null);
+    let success = false;
 
     try {
       const res = await axios.post<CoralQueryResponse>("/api/coral/query", {
@@ -145,12 +146,35 @@ export default function CoralExplorer({
       setRows(res.data.rows);
       setDurationMs(res.data.duration_ms);
       setTab("results");
+      success = true;
+
+      if (isDirectSql) {
+        try {
+          (window as any).pendo?.track("coral_sql_query_executed", {
+            sql_query: sqlToRun.substring(0, 200),
+            result_count: res.data.rows.length,
+            duration_ms: res.data.duration_ms,
+            success: true,
+          });
+        } catch (e) { /* ignore tracking errors */ }
+      }
     } catch (err: any) {
       const detail = err.response?.data?.detail || err.response?.data?.error || err.message;
       setError(String(detail));
+
+      if (isDirectSql) {
+        try {
+          (window as any).pendo?.track("coral_sql_query_executed", {
+            sql_query: sqlToRun.substring(0, 200),
+            success: false,
+            error_message: String(detail).substring(0, 100),
+          });
+        } catch (e) { /* ignore tracking errors */ }
+      }
     } finally {
       setRunning(false);
     }
+    return success;
   };
 
   const handleGenerateAndRun = async (text: string) => {
@@ -164,7 +188,17 @@ export default function CoralExplorer({
 
     const generated = await handleGenerate(text);
     if (generated) {
-      await handleRun(generated);
+      const success = await handleRun(generated);
+
+      try {
+        (window as any).pendo?.track("coral_nl_query_executed", {
+          nl_query: text.substring(0, 100),
+          generated_sql: generated.substring(0, 100),
+          repo_scope_owner: resolvedRepo?.owner || "",
+          repo_scope_name: resolvedRepo?.name || "",
+          success,
+        });
+      } catch (e) { /* ignore tracking errors */ }
     }
   };
 
@@ -327,7 +361,7 @@ export default function CoralExplorer({
               </Button>
 
               <Button
-                onClick={() => sql.trim() && void handleRun(sql.trim())}
+                onClick={() => sql.trim() && void handleRun(sql.trim(), true)}
                 disabled={running || !sql.trim()}
                 className="gap-2"
               >

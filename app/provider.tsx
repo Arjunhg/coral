@@ -51,12 +51,19 @@ function Provider({
                     credits: userData.credits
                 }
             });
-
-            if(result.data?.isNewUser){
-                (window as any).pendo?.track("user_account_created", {
-                    isNewUser: true,
-                    userId: userData.id,
-                })
+            // Track the account creation event only if the backend flags them as a new user
+            if (result.data?.isNewUser) {
+                try {
+                    (window as any).pendo?.track("user_account_created", {
+                        isNewUser: true,
+                        userId: userData.id,
+                        user_email: userData.email || user?.primaryEmailAddress?.emailAddress || "",
+                        user_name: userData.name || user?.fullName || "",
+                        initial_credits: userData.credits ?? 1000,
+                    });
+                } catch (e) {
+                     /* ignore tracking errors */
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
+import { pendoTrackServer } from '@/lib/pendo/track';
 
 export async function POST(req: Request) {
   const body = await req.text();
@@ -23,6 +24,10 @@ export async function POST(req: Request) {
       const session = event.data.object;
       // Fulfill purchase in your database
       console.log(`Payment successful for checkout session: ${session.id}`);
+      await pendoTrackServer("stripe_payment_completed", {
+        session_id: session.id,
+        event_type: "checkout.session.completed",
+      }, String((session as any).customer || "system"));
       break;
     default:
       console.log(`Unhandled event type ${event.type}`);

@@ -243,6 +243,20 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                         error: data.error,
                     },
                 }));
+
+                try {
+                    (window as any).pendo?.track("test_case_execution_completed", {
+                        test_case_id: tcId,
+                        test_case_title: currentTestCase.title?.substring(0, 50),
+                        test_case_type: currentTestCase.type,
+                        status: data.status,
+                        execution_mode: executionMode,
+                        has_vision_analysis: Boolean(parsedVisionAnalysis),
+                        session_id: data.sessionId || "",
+                        credits_remaining: data.credits,
+                        base_url: baseUrl.trim(),
+                    });
+                } catch (e) { /* ignore tracking errors */ }
             } catch (err: any) {
                 const errMsg = err.response?.data?.error || err.message || "Execution failed";
                 const errorLogs = err.response?.data?.logs;
@@ -268,6 +282,19 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                             : [...(prev[tcId]?.logs || []), `[SYSTEM ERROR] ${errMsg}`],
                     },
                 }));
+
+                try {
+                    (window as any).pendo?.track("test_case_execution_completed", {
+                        test_case_id: tcId,
+                        test_case_title: currentTestCase.title?.substring(0, 50),
+                        test_case_type: currentTestCase.type,
+                        status: "failed",
+                        execution_mode: executionMode,
+                        has_vision_analysis: Boolean(parsedVisionAnalysis),
+                        error_message: errMsg?.substring(0, 100),
+                        base_url: baseUrl.trim(),
+                    });
+                } catch (e) { /* ignore tracking errors */ }
             }
 
             // Move to next item in the queue
@@ -297,6 +324,17 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
         setCurrentIdx(0);
         setSelectedDetailId(testCases[0].id);
         hasSpokenRunSummaryRef.current = false;
+
+        try {
+            (window as any).pendo?.track("test_execution_batch_started", {
+                test_case_count: testCases.length,
+                base_url: baseUrl.trim(),
+                execution_mode: executionMode,
+                has_custom_prompt: customPrompt.trim().length > 0,
+                repo_name: repository?.name || "",
+                repo_owner: repository?.owner || "",
+            });
+        } catch (e) { /* ignore tracking errors */ }
     };
 
     const stopExecution = () => {
@@ -332,6 +370,17 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
         const total = queueResults.length;
         const passed = queueResults.filter((res) => res?.status === "passed").length;
         const failed = queueResults.filter((res) => res?.status === "failed").length;
+
+        try {
+            (window as any).pendo?.track("test_execution_batch_completed", {
+                total_tests: total,
+                passed_count: passed,
+                failed_count: failed,
+                pass_rate: total > 0 ? Math.round((passed / total) * 100) : 0,
+                repo_name: repository?.name || "",
+                execution_mode: executionMode,
+            });
+        } catch (e) { /* ignore tracking errors */ }
 
         hasSpokenRunSummaryRef.current = true;
         speakTestSummary(passed, failed, total);

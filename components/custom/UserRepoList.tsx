@@ -90,6 +90,17 @@ function UserRepoList({
             if (result.data.credits !== undefined) {
                 setUserDetail({ ...userDetail, credits: result.data.credits });
             }
+
+            try {
+                (window as any).pendo?.track("test_cases_generated", {
+                    repo_id: repo.repoId,
+                    repo_owner: repo.owner,
+                    repo_name: repo.name,
+                    branch: repo.defaultBranch,
+                    credits_remaining: result.data.credits,
+                    success: true,
+                });
+            } catch (e) { /* ignore tracking errors */ }
             
             // Reload test cases after generation
             GetTestCases(repo.repoId);
@@ -134,11 +145,23 @@ function UserRepoList({
                 repoName: repo.name,
                 withinDays: 7,
             });
+            const smartTests = Array.isArray(res.data?.tests) ? res.data.tests : [];
             setSmartRunResults({
                 repoId: repo.repoId,
-                tests: Array.isArray(res.data?.tests) ? res.data.tests : [],
+                tests: smartTests,
                 rationale: String(res.data?.rationale || ''),
             });
+
+            try {
+                (window as any).pendo?.track("smart_run_completed", {
+                    repo_id: repo.repoId,
+                    repo_owner: repo.owner,
+                    repo_name: repo.name,
+                    within_days: 7,
+                    prioritized_test_count: smartTests.length,
+                    total_test_count: testCases.length,
+                });
+            } catch (e) { /* ignore tracking errors */ }
         } catch (error: any) {
             alert(error.response?.data?.error || error.message || 'Smart Run failed');
         } finally {
@@ -300,6 +323,14 @@ function UserRepoList({
                                                 onClick={() => {
                                                     const prioritizedIds = new Set(smartRunResults.tests.map((t) => t.id));
                                                     const prioritizedTests = testCases.filter((tc) => prioritizedIds.has(tc.id));
+
+                                                    try {
+                                                        (window as any).pendo?.track("smart_run_tests_dispatched", {
+                                                            repo_id: repo.repoId,
+                                                            dispatched_test_count: prioritizedTests.length,
+                                                        });
+                                                    } catch (e) { /* ignore tracking errors */ }
+
                                                     window.dispatchEvent(
                                                         new CustomEvent("scriptless:smart-run", {
                                                             detail: { repoId: repo.repoId, tests: prioritizedTests },

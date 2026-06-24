@@ -82,6 +82,19 @@ function RepoDialog({
         });
 
         console.log(result.data);
+
+        try {
+            (window as any).pendo?.track("repository_added", {
+                repo_id: selectedRepo.id,
+                repo_name: selectedRepo.name,
+                repo_full_name: selectedRepo.full_name,
+                repo_language: selectedRepo.language || "",
+                repo_private: selectedRepo.private_,
+                repo_owner: selectedRepo.owner,
+                default_branch: selectedRepo.default_branch,
+            });
+        } catch (e) { /* ignore tracking errors */ }
+
         setIsOpen(false);
         setRefreshPage(true);
     }

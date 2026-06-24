@@ -72,6 +72,14 @@ function WorkspaceBody() {
     };
 
     const handleVoiceCommand = (command: VoiceCommand) => {
+        try {
+            (window as any).pendo?.track("voice_command_executed", {
+                command_type: command.type,
+                command_scope: (command as any).scope || "",
+                command_status: (command as any).status || "",
+            });
+        } catch (e) { /* ignore tracking errors */ }
+
         switch (command.type) {
             case "RUN_TESTS":
                 setVoiceRunScope(command.scope);
