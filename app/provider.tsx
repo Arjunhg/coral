@@ -2,7 +2,8 @@
 import { useUser } from '@clerk/nextjs';
 import { UserDetailContext } from '@/context/UserDetailContext';
 import axios from 'axios';
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation';
 
 function Provider({
     children,
@@ -12,6 +13,21 @@ function Provider({
 
     const { user } = useUser();
     const [userDetail, setUserDetail] = useState<any>();
+    const pendoInitialized = useRef(false);
+    const pathname = usePathname();
+
+    useEffect(() => {
+        if(!pendoInitialized.current){
+            pendoInitialized.current = true;
+            pendo.initialize({ visitor: { id: 'anonymous-' + Date.now() } });
+        }
+    }, []);
+    
+    useEffect(() => {
+        if(pendoInitialized.current){
+            pendo.pageLoad();
+        }
+    }, [pathname]);
 
     useEffect(() => {
         if (user) {
@@ -22,21 +38,34 @@ function Provider({
     const CreateNewUser = async () => {
         const result = await axios.post('/api/users', {});
 
-        console.log("Result", result);
-        setUserDetail(result.data?.user);
+        const userData = result.data?.user;
+        setUserDetail(userData);
 
-        try {
-            const createdUser = result.data?.user;
-            if (createdUser?.id && !localStorage.getItem(`pendo_tracked_user_${createdUser.id}`)) {
-                localStorage.setItem(`pendo_tracked_user_${createdUser.id}`, "1");
-                (window as any).pendo?.track("user_account_created", {
-                    user_email: user?.primaryEmailAddress?.emailAddress || "",
-                    user_name: user?.fullName || "",
-                    initial_credits: createdUser?.credits ?? 1000,
-                });
+        if (userData) {
+            pendo.identify({
+                visitor: {
+                    id: String(userData.id),
+                    email: userData.email,
+                    full_name: userData.name,
+                    createdAt: userData.createdAt,
+                    credits: userData.credits
+                }
+            });
+            // Track the account creation event only if the backend flags them as a new user
+            if (result.data?.isNewUser) {
+                try {
+                    (window as any).pendo?.track("user_account_created", {
+                        isNewUser: true,
+                        userId: userData.id,
+                        user_email: userData.email || user?.primaryEmailAddress?.emailAddress || "",
+                        user_name: userData.name || user?.fullName || "",
+                        initial_credits: userData.credits ?? 1000,
+                    });
+                } catch (e) {
+                     /* ignore tracking errors */
+                }
             }
-        } catch (e) { /* ignore tracking errors */ }
-
+        }
     }
 
     return (

@@ -15,6 +15,16 @@ import {
   Terminal,
 } from "lucide-react";
 
+const PENDO_AGENT_ID = "FuFjOvZnWeVyjKqRQZHsui-o7uk";
+
+const SUGGESTED_PROMPTS = [
+  "Show me open issues from the last 7 days",
+  "Which failing tests touch the checkout route?",
+  "List recent commits to authentication files",
+  "How many Sentry errors hit /api/users today?",
+  "Show recent Splunk error events for the checkout service",
+];
+
 type CoralQueryResponse = {
   rows: Record<string, unknown>[];
   count: number;
@@ -51,6 +61,7 @@ export default function CoralExplorer({
   const [catalogSchemas, setCatalogSchemas] = useState<string[]>([]);
   const [coralAvailable, setCoralAvailable] = useState<boolean | null>(null);
   const autoRanRef = useRef(false);
+  const conversationIdRef = useRef(crypto.randomUUID());
   const initialRepoKey = defaultRepo
     ? `${defaultRepo.owner}/${defaultRepo.name}`
     : repoOptions[0]
@@ -99,10 +110,20 @@ export default function CoralExplorer({
           ? { owner: resolvedRepo.owner, repo: resolvedRepo.name }
           : null,
       });
-      setSql(String(res.data?.sql ?? ""));
+      const generatedSql = String(res.data?.sql ?? "");
+      setSql(generatedSql);
       setCatalogSchemas(Array.isArray(res.data?.catalog_schemas) ? res.data.catalog_schemas : []);
       setTab("sql");
-      return String(res.data?.sql ?? "");
+
+      window.pendo?.trackAgent("agent_response", {
+        agentId: PENDO_AGENT_ID,
+        conversationId: conversationIdRef.current,
+        messageId: crypto.randomUUID(),
+        content: generatedSql,
+        modelUsed: "gemini-3.1-flash-lite",
+      });
+
+      return generatedSql;
     } catch (err: any) {
       const detail = err.response?.data?.detail || err.response?.data?.error || err.message;
       setError(String(detail));
@@ -157,6 +178,14 @@ export default function CoralExplorer({
   };
 
   const handleGenerateAndRun = async (text: string) => {
+    window.pendo?.trackAgent("prompt", {
+      agentId: PENDO_AGENT_ID,
+      conversationId: conversationIdRef.current,
+      messageId: crypto.randomUUID(),
+      content: text,
+      suggestedPrompt: SUGGESTED_PROMPTS.includes(text),
+    });
+
     const generated = await handleGenerate(text);
     if (generated) {
       const success = await handleRun(generated);
