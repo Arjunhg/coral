@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenAI } from "@google/genai";
-import { analyzeScreenshot } from "@/lib/featherless/analyzeScreenshot";
+import { analyzeScreenshot } from "@/lib/inference/analyzeScreenshot";
 import { db } from "@/db";
 import { TestCasesTable, repositories, users } from "@/db/schema";
 import { eq } from "drizzle-orm";

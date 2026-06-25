@@ -1,6 +1,6 @@
 import {
-  featherlessClient,
-  FEATHERLESS_TEXT_MODEL,
+  openai,
+  NVIDIA_TEXT_MODEL,
 } from "./client";
 import { TEST_GENERATION_SYSTEM_PROMPT } from "./prompts/testGeneration";
 import { TEST_CASE_TOOL_DEFINITION } from "./tools/testCaseTool";
@@ -42,8 +42,8 @@ function tryParseTestCases(raw: string): ParsedTestCases | null {
 async function requestJsonFallback(
   messages: { role: "system" | "user"; content: string }[]
 ): Promise<ParsedTestCases | null> {
-  const response = await featherlessClient.chat.completions.create({
-    model: FEATHERLESS_TEXT_MODEL,
+  const response = await openai.chat.completions.create({
+    model: NVIDIA_TEXT_MODEL,
     messages: [
       ...messages,
       {
@@ -75,27 +75,46 @@ export async function generateTestCases(
     },
   ] as const;
 
-  const response = await featherlessClient.chat.completions.create({
-    model: FEATHERLESS_TEXT_MODEL,
+  const stream = await openai.chat.completions.create({
+    model: NVIDIA_TEXT_MODEL,
     messages: [...messages],
     tools: [TEST_CASE_TOOL_DEFINITION],
     tool_choice: {
       type: "function",
       function: { name: "submit_test_cases" },
     },
+    temperature: 0.7,
+    top_p: 0.9,
+    max_tokens: 3000,
+    stream: true
   });
 
-  console.log("Featherless response:", JSON.stringify(response, null, 2));
+  let content = "";
+  let toolArguments = "";
 
-  const toolCall = response.choices[0]?.message?.tool_calls?.[0];
-  let parsed: ParsedTestCases | null = null;
+  for await (const chunk of stream){
+    const delta = chunk.choices[0]?.delta;
 
-  if (toolCall?.type === "function") {
-    parsed = tryParseTestCases(toolCall.function.arguments ?? "");
+    if(delta?.content){
+      content += delta.content;
+    }
+
+    if(delta?.tool_calls){
+      for(const toolCall of delta.tool_calls){
+        if(toolCall.function?.arguments){
+          toolArguments += toolCall.function.arguments;
+        }
+      }
+    }
   }
 
-  if (!parsed) {
-    const content = response.choices[0]?.message?.content ?? "";
+  let parsed: ParsedTestCases | null = null;
+
+  if(toolArguments.trim()){
+    parsed = tryParseTestCases(toolArguments);
+  }
+
+  if(!parsed && content.trim()){
     parsed = tryParseTestCases(content);
   }
 
@@ -104,12 +123,12 @@ export async function generateTestCases(
   }
 
   if (!parsed) {
-    throw new Error("Featherless did not return structured test cases");
+    throw new Error("Test generation failed — please try again");
   }
 
   const testCases = parsed.testCases ?? [];
   if (!testCases.length) {
-    throw new Error("Featherless did not generate any test cases");
+    throw new Error("Test generation failed — please try again");
   }
 
   return testCases;
