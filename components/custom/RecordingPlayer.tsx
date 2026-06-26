@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
     Dialog,
     DialogContent,
@@ -134,8 +134,6 @@ export function RecordingPlayer({
                 if (!cancelled) {
                     setError(e?.message || "Failed to load recording");
                 }
-            } finally {
-                if (!cancelled) setLoading(false);
             }
         };
 
@@ -159,22 +157,6 @@ export function RecordingPlayer({
         const m = Math.floor(sec / 60);
         const s = sec % 60;
         return `${m}:${s.toString().padStart(2, "0")}`;
-    };
-
-    /**
-     * Extract a short, readable path hint from the Browserbase page URL.
-     * e.g. "/v1/sessions/abc.../replays/0" → "replays/0"
-     * Shown as a sub-label inside each tab button and as a full tooltip.
-     */
-    const formatPageUrl = (url: string) => {
-        try {
-            // url is a relative Browserbase API path, e.g. /v1/sessions/{id}/replays/0
-            const parts = url.replace(/^\//, "").split("/");
-            // Return the last two meaningful segments: "replays/0"
-            return parts.slice(-2).join("/");
-        } catch {
-            return url;
-        }
     };
 
     return (
@@ -208,7 +190,6 @@ export function RecordingPlayer({
                     {pages.length > 1 && (
                         <div className="flex gap-2 flex-wrap">
                             {pages.map((page, idx) => {
-                                const urlHint = formatPageUrl(page.url);
                                 const isActive = activePageId === page.pageId;
                                 return (
                                     <button
@@ -226,12 +207,6 @@ export function RecordingPlayer({
                                             Tab {idx + 1}
                                             {" · "}
                                             {formatDuration(page.startTimeMs, page.endTimeMs)}
-                                        </span>
-                                        {/* URL context: truncated path so users can identify the right tab */}
-                                        <span className={`text-[10px] font-normal mt-0.5 ${
-                                            isActive ? "text-white/80" : "text-gray-400"
-                                        }`}>
-                                            {urlHint}
                                         </span>
                                     </button>
                                 );
