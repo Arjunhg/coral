@@ -21,8 +21,6 @@ import {
     ExternalLink,
     Globe,
     Code,
-    RefreshCw,
-    PlayCircle,
     ChevronRight,
     Sparkles,
     Database,
@@ -30,12 +28,14 @@ import {
     ChevronDown,
     ChevronUp,
     Eye,
+    PlayCircle,
 } from "lucide-react";
 import axios from "axios";
 import { UserDetailContext } from "@/context/UserDetailContext";
 import { useContext } from "react";
 import { speakTestSummary } from "@/lib/speechmatics/voiceReadback";
 import AgentTracePanel from "@/components/custom/AgentTracePanel";
+import { RecordingPlayer } from "@/components/custom/RecordingPlayer";
 
 type Props = {
     isOpen: boolean;
@@ -135,6 +135,8 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
     const [customPrompt, setCustomPrompt] = useState("");
     const [showOptions, setShowOptions] = useState(false);
     const hasSpokenRunSummaryRef = useRef(false);
+
+    const [recordingTestCaseId, setRecordingTestCaseId] = useState<number | null>(null);
 
     // Initialize states when testCases change or modal opens
     useEffect(() => {
@@ -387,6 +389,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
     }, [currentIdx, isExecuting, results, testCases]);
 
     return (
+        <>
         <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
             <DialogContent className="w-[calc(100vw-1rem)] max-w-5xl h-[95dvh] sm:h-[90vh] flex flex-col p-3 sm:p-6 gap-3 sm:gap-4 bg-white rounded-2xl shadow-2xl border overflow-hidden">
                 <DialogHeader className="border-b pb-3 sm:pb-4 flex flex-row items-center justify-between shrink-0">
@@ -556,14 +559,14 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                             Expected: {currentSelectedTestCase.expectedResult}
                                         </p>
                                     </div>
-                                    {currentSelectedResult?.sessionUrl && (
+                                    {currentSelectedResult?.sessionId && selectedDetailId && (
                                         <Button
-                                            onClick={() => window.open(currentSelectedResult.sessionUrl, "_blank")}
+                                            onClick={() => setRecordingTestCaseId(selectedDetailId)}
                                             variant="outline"
                                             size="sm"
                                             className="font-medium text-xs gap-1 border-primary/30 text-primary hover:bg-primary/5 shadow-xs shrink-0 w-full sm:w-auto"
                                         >
-                                            <ExternalLink className="h-3.5 w-3.5" /> Watch Recording
+                                            <PlayCircle className="h-3.5 w-3.5" /> Watch Recording
                                         </Button>
                                     )}
                                 </div>
@@ -661,7 +664,7 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                                                         variant="outline"
                                                         className="ml-auto text-[10px] border-violet-300 text-violet-700 bg-white"
                                                     >
-                                                        Featherless
+                                                        Inference Vision
                                                     </Badge>
                                                 </div>
                                                 {hasAnalysis ? (
@@ -832,6 +835,15 @@ export default function TestExecutionModal({ isOpen, onClose, testCases, reposit
                 </div>
             </DialogContent>
         </Dialog>
+
+        <RecordingPlayer
+            testCaseId={recordingTestCaseId}
+            open={recordingTestCaseId !== null}
+            onOpenChange={(open) => {
+                if (!open) setRecordingTestCaseId(null);
+            }}
+        />
+        </>
     );
 }
 
