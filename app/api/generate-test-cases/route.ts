@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateTestCases } from "@/lib/featherless/generateTests";
+import { generateTestCases } from "@/lib/inference/generateTests";
 import { db } from "@/db";
 import { cookies } from "next/headers";
 import { TestCasesTable, users } from "@/db/schema";
