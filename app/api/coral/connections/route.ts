@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
 import { coralConnections } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
+import { withOccRetry } from "@/lib/db/retry";
 
 const CORAL_SIDECAR_URL = process.env.CORAL_SIDECAR_URL;
 const CORAL_SIDECAR_SECRET = process.env.CORAL_SIDECAR_SECRET;
@@ -121,23 +122,25 @@ export async function POST(req: NextRequest) {
       ? new Date(String(sidecarBody.last_verified_at))
       : new Date();
 
-    await db
-      .insert(coralConnections)
-      .values({
-        userId,
-        sourceName: source,
-        status: "connected",
-        lastVerifiedAt: verifiedAt,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [coralConnections.userId, coralConnections.sourceName],
-        set: {
+    await withOccRetry(() =>
+      db
+        .insert(coralConnections)
+        .values({
+          userId,
+          sourceName: source,
           status: "connected",
           lastVerifiedAt: verifiedAt,
           updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [coralConnections.userId, coralConnections.sourceName],
+          set: {
+            status: "connected",
+            lastVerifiedAt: verifiedAt,
+            updatedAt: new Date(),
+          },
+        })
+    );
 
     return NextResponse.json({
       ok: true,
@@ -147,21 +150,23 @@ export async function POST(req: NextRequest) {
       configured_sources: sidecarBody.configured_sources ?? [],
     });
   } catch (error) {
-    await db
-      .insert(coralConnections)
-      .values({
-        userId,
-        sourceName: source || "unknown",
-        status: "failed",
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [coralConnections.userId, coralConnections.sourceName],
-        set: {
+    await withOccRetry(() =>
+      db
+        .insert(coralConnections)
+        .values({
+          userId,
+          sourceName: source || "unknown",
           status: "failed",
           updatedAt: new Date(),
-        },
-      });
+        })
+        .onConflictDoUpdate({
+          target: [coralConnections.userId, coralConnections.sourceName],
+          set: {
+            status: "failed",
+            updatedAt: new Date(),
+          },
+        })
+    );
 
     return NextResponse.json(
       {
