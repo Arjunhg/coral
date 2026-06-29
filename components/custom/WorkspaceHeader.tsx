@@ -30,12 +30,12 @@ function WorkspaceHeader() {
 
             {/* User Details & Button */}
             <div className='flex items-center gap-2 sm:gap-4'>
-                <Link
+                {/* <Link
                     href="/workspace/integrations"
                     className="rounded-full border border-zinc-200 px-3 py-1.5 text-xs sm:text-sm font-medium text-zinc-700 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
                 >
                     Integrations
-                </Link>
+                </Link> */}
                 {userDetail && (
                     <div className='flex items-center gap-1.5 bg-blue-50 text-blue-700 px-2 py-1 sm:px-3 rounded-full text-xs sm:text-sm font-medium border border-blue-100'>
                         <Coins className='w-4 h-4 text-blue-500' />

@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { GoogleGenAI } from "@google/genai";
-import { coral, CoralError, withCoralTenant } from "@/lib/coral/client";
+import { coral, CoralColumn, CoralError, withCoralTenant } from "@/lib/coral/client";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
@@ -24,6 +24,120 @@ async function getCatalog(tenantId: string) {
     fetchedAt: now,
   });
   return tables as Array<Record<string, unknown>>;
+}
+
+const cachedColumnsByKey = new Map<
+  string,
+  { columns: CoralColumn[]; fetchedAt: number }
+>();
+const COLUMNS_TTL_MS = 5 * 60 * 1000;
+
+async function getColumns(
+  tenantId: string,
+  schema: string,
+  table: string
+): Promise<CoralColumn[]> {
+  const key = `${tenantId}:${schema}.${table}`;
+  const now = Date.now();
+  const cached = cachedColumnsByKey.get(key);
+  if (cached && now - cached.fetchedAt < COLUMNS_TTL_MS) {
+    return cached.columns;
+  }
+
+  const columns = await withCoralTenant(tenantId, () =>
+    coral.listColumns(schema, table)
+  );
+  cachedColumnsByKey.set(key, { columns, fetchedAt: now });
+  return columns;
+}
+
+// Stage A: ask the model which catalog tables are relevant, so we only fetch
+// columns for a handful instead of dumping columns for hundreds of tables
+// (GitHub alone exposes 360+). Returns validated {schema, table} refs.
+async function selectRelevantTables(
+  question: string,
+  catalogBlock: string,
+  catalog: Array<Record<string, unknown>>
+): Promise<Array<{ schema: string; table: string }>> {
+  const selectionPrompt = `From the table list below, pick ONLY the tables needed to answer the question.
+Output a JSON array of objects like [{"schema":"github","table":"issues"}]. Max 6 entries. Output JSON only, no prose, no code fences.
+
+Tables:
+${catalogBlock}
+
+Question: ${question}
+
+JSON:`;
+
+  let raw = "";
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-lite",
+      contents: selectionPrompt,
+    });
+    raw = (response.text || "").trim();
+  } catch {
+    return [];
+  }
+
+  raw = raw
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/, "")
+    .trim();
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  // Only keep refs that actually exist in the catalog.
+  const valid = new Set(
+    catalog.map((t) => `${String(t.schema_name)}.${String(t.table_name)}`)
+  );
+  const seen = new Set<string>();
+  const refs: Array<{ schema: string; table: string }> = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== "object") continue;
+    const schema = String((entry as Record<string, unknown>).schema ?? "").trim();
+    const table = String((entry as Record<string, unknown>).table ?? "").trim();
+    const key = `${schema}.${table}`;
+    if (schema && table && valid.has(key) && !seen.has(key)) {
+      seen.add(key);
+      refs.push({ schema, table });
+    }
+    if (refs.length >= 8) break;
+  }
+  return refs;
+}
+
+function formatColumnsForPrompt(
+  selected: Array<{
+    schema: string;
+    table: string;
+    relationType: string;
+    columns: CoralColumn[];
+  }>
+) {
+  return selected
+    .map(({ schema, table, relationType, columns }) => {
+      const cols = columns
+        .map((col) => {
+          const flag = col.is_required_filter
+            ? relationType === "table_function"
+              ? " [required arg]"
+              : " [required filter]"
+            : "";
+          return `${col.column_name} (${col.data_type})${flag}`;
+        })
+        .join(", ");
+      const kind = relationType === "table_function" ? "table function" : "table";
+      return `- ${schema}.${table} (${kind}): ${cols || "no columns reported"}`;
+    })
+    .join("\n");
 }
 
 function formatCatalogForPrompt(tables: Array<Record<string, unknown>>) {
@@ -91,6 +205,54 @@ export async function POST(req: NextRequest) {
 
   const catalogBlock = formatCatalogForPrompt(catalog);
 
+  // Two-stage grounding: pick the relevant tables, then fetch their real
+  // columns so the model never invents a column (e.g. created_at on a search
+  // table function that does not expose it).
+  let columnsBlock = "";
+  try {
+    const refs = await selectRelevantTables(text.trim(), catalogBlock, catalog);
+    if (refs.length > 0) {
+      const catalogByKey = new Map(
+        catalog.map((t) => [`${String(t.schema_name)}.${String(t.table_name)}`, t])
+      );
+      const fetched = await Promise.allSettled(
+        refs.map(async (ref) => {
+          const columns = await getColumns(userId, ref.schema, ref.table);
+          const meta = catalogByKey.get(`${ref.schema}.${ref.table}`);
+          return {
+            schema: ref.schema,
+            table: ref.table,
+            relationType: String(meta?.relation_type ?? "table"),
+            columns,
+          };
+        })
+      );
+      const selected = fetched
+        .filter(
+          (r): r is PromiseFulfilledResult<{
+            schema: string;
+            table: string;
+            relationType: string;
+            columns: CoralColumn[];
+          }> => r.status === "fulfilled" && r.value.columns.length > 0
+        )
+        .map((r) => r.value);
+      if (selected.length > 0) {
+        columnsBlock = formatColumnsForPrompt(selected);
+      }
+    }
+  } catch {
+    // Non-fatal: fall back to table-only grounding if column lookup fails.
+    columnsBlock = "";
+  }
+
+  const columnsSection = columnsBlock
+    ? `Verified columns for the tables most relevant to this question (use ONLY these columns for these tables; do NOT reference any column not listed here):
+${columnsBlock}
+
+`
+    : "";
+
   const contextBlock =
     contextOwner && contextRepo
       ? `Default repository context:
@@ -108,7 +270,7 @@ ${contextBlock}
 Available tables (use ONLY these, do NOT invent table names):
 ${catalogBlock}
 
-Rules:
+${columnsSection}Rules:
 1. Output ONLY raw SQL. No markdown fences, commentary, or explanations.
 2. SELECT only. Never INSERT/UPDATE/DELETE/DROP/CREATE/ALTER.
 3. If a table lists REQUIRED FILTERS, include them in the WHERE clause as equality predicates.
@@ -120,6 +282,9 @@ Rules:
 9. For table functions, call them in the FROM clause using named arguments, for example: SELECT * FROM schema.function(arg_name => 'value').
 10. For splunk.search_results, pass a full Splunk SPL string in the search argument. When the user asks for logs or events, build a bounded SPL search and include "| fields _time host source sourcetype _raw index splunk_server | head 25" inside that string.
 11. If the question cannot be answered with these tables, output exactly: -- CANNOT_ANSWER
+12. CRITICAL: Only reference columns that appear in the "Verified columns" section for that exact table. Never use a column that is not listed there. If a column you want (for example created_at, body, or description) is NOT listed for a table, do not SELECT, filter, or ORDER BY it — choose a listed column or drop that clause.
+13. When you need columns like created_at, updated_at, body, or description, prefer a base table (relation type "table", e.g. github.issues) over a search-style table function (e.g. github.search_issues), because search functions usually expose only title/url/state/number and have no timestamp column.
+14. In a UNION ALL, every branch must SELECT the same number of columns in the same order; if one source lacks a column another has (e.g. a timestamp), select NULL for it in the branch that lacks it so the column lists line up.
 
 User question: ${text.trim()}
 
