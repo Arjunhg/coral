@@ -27,6 +27,18 @@ console.log({
   DSQL_ENDPOINT: process.env.DSQL_ENDPOINT,
 });
 
+try {
+  const { defaultProvider } = await import("@aws-sdk/credential-provider-node");
+
+  const creds = await defaultProvider()();
+
+  console.log("AWS credentials loaded:", {
+    accessKey: creds.accessKeyId.slice(0, 8),
+  });
+} catch (e) {
+  console.error("Default provider failed:", e);
+}
+
 function createPool() {
   const pool = new AuroraDSQLPool({
     host,
