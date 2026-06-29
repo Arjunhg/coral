@@ -109,7 +109,6 @@ export const coral = {
       },
       opts?.timeoutMs
     );
-    console.log("[coral] sql response:", body);
 
     return Array.isArray(body?.rows) ? body.rows : [];
   },

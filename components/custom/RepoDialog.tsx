@@ -52,7 +52,6 @@ function RepoDialog({
 
     const GetRepoList = async () => {
         const result = await axios.get('/api/github/repos');
-        console.log(result.data);
         setRepoList(result.data);
     }
 
@@ -80,8 +79,6 @@ function RepoDialog({
             language: selectedRepo.language,
             default_branch: selectedRepo.default_branch,
         });
-
-        console.log(result.data);
 
         try {
             (window as any).pendo?.track("repository_added", {

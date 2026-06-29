@@ -86,7 +86,6 @@ function UserRepoList({
                 branch: repo.defaultBranch,
             });
 
-            console.log(result.data);
             if (result.data.credits !== undefined) {
                 setUserDetail({ ...userDetail, credits: result.data.credits });
             }
@@ -117,7 +116,7 @@ function UserRepoList({
         setTestCaseLoading(true);
         setTestCases([]);
         const result = await axios.get(`/api/test-cases?repoId=${repoId}`);
-        console.log(result.data);
+
         const userTestCases = result.data as TestCase[];
         const passedTests = userTestCases?.filter(testCase => testCase.status == 'passed').length || 0;
         const failedTests = userTestCases?.filter(testCase => testCase.status == 'failed').length || 0;

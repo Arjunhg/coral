@@ -30,16 +30,11 @@ function RepoSettings({ repo, setReload }: props) {
 
     const handleSaveSettings = async () => {
         // Implement the logic to save the updated settings to the database
-        // You can make an API call to update the repository settings in the backend
-        console.log('Saved Settings:', repoSettings);
-
         const result = await axios.post('/api/user-repo/settings', {
             repoId: repo.repoId,
             targetDomain: repoSettings.targetDomain,
             globalInstruction: repoSettings.globalInstruction,
         });
-
-        console.log(result?.data);
 
         try {
             (window as any).pendo?.track("repository_settings_saved", {

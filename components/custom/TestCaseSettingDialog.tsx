@@ -45,7 +45,6 @@ function TestCaseSettingDialog({ testCase, setReload }: props) {
             ...formTestCase,
             testCaseId: testCase?.id
         });
-        console.log(result?.data);
 
         try {
             (window as any).pendo?.track("test_case_settings_updated", {
