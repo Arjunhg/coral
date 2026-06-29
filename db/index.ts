@@ -19,6 +19,14 @@ if (!host) {
   );
 }
 
+console.log({
+  VERCEL: process.env.VERCEL,
+  VERCEL_ENV: process.env.VERCEL_ENV,
+  AWS_ROLE_ARN: process.env.AWS_ROLE_ARN,
+  AWS_REGION: process.env.AWS_REGION,
+  DSQL_ENDPOINT: process.env.DSQL_ENDPOINT,
+});
+
 function createPool() {
   const pool = new AuroraDSQLPool({
     host,
