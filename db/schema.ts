@@ -1,7 +1,7 @@
-import { integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity({ cache: 65536 }),
   name: text("name"),
   email: text("email").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -10,8 +10,8 @@ export const users = pgTable("users", {
 
 
 export const repositories = pgTable("repositories", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity( { cache: 65536 }),
+  userId: integer("user_id").notNull(),
   repoId: integer("repo_id").notNull(),
   name: text("name").notNull(),
   fullName: text("full_name").notNull(),
@@ -28,7 +28,7 @@ export const repositories = pgTable("repositories", {
 
 
 export const TestCasesTable = pgTable("test_cases", {
-  id: serial("id").primaryKey(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity({ cache: 65536 }),
 
   // User / project details
   userId: varchar("user_id", { length: 255 }).notNull(),
@@ -48,7 +48,7 @@ export const TestCasesTable = pgTable("test_cases", {
   targetFiles: jsonb("target_files").$type<string[]>().default([]),
   expectedResult: text("expected_result"),
 
-  // Later you can update these fields
+  // Later update these fields
   browserbaseScript: text("browserbase_script"),
   status: varchar("status", { length: 100 }).default("generated"),
 
@@ -74,8 +74,8 @@ export const TestCasesTable = pgTable("test_cases", {
 });
 
 export const apiKeys = pgTable("api_keys", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity({ cache: 65536 }),
+  userId: integer("user_id").notNull(),
   keyHash: text("key_hash").notNull().unique(),
   keyPrefix: varchar("key_prefix", { length: 12 }).notNull(),
   label: varchar("label", { length: 100 }).default("default"),
@@ -85,10 +85,8 @@ export const apiKeys = pgTable("api_keys", {
 });
 
 export const agentQueries = pgTable("agent_queries", {
-  id: serial("id").primaryKey(),
-  testCaseId: integer("test_case_id").references(() => TestCasesTable.id, {
-    onDelete: "cascade",
-  }),
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity({ cache: 65536 }),
+  testCaseId: integer("test_case_id"),
   runId: varchar("run_id", { length: 64 }),
   source: varchar("source", { length: 100 }).notNull(),
   sql: text("sql").notNull(),
@@ -103,7 +101,7 @@ export const agentQueries = pgTable("agent_queries", {
 export const coralConnections = pgTable(
   "coral_connections",
   {
-    id: serial("id").primaryKey(),
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity({ cache: 65536 }),
     userId: varchar("user_id", { length: 255 }).notNull(),
     sourceName: varchar("source_name", { length: 100 }).notNull(),
     status: varchar("status", { length: 50 }).notNull().default("pending"),

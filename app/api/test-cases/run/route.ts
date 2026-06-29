@@ -622,104 +622,104 @@ export async function POST(req: NextRequest) {
 
             // Prompt Gemini for Playwright code string
             const prompt = `
-You are an expert QA automation engineer.
-Your task is to write a Playwright Node.js script body that executes a test case on an application running at URL: "${baseUrl}".
+                You are an expert QA automation engineer.
+                Your task is to write a Playwright Node.js script body that executes a test case on an application running at URL: "${baseUrl}".
 
-Test Case Details:
-- Title: ${testCase.title}
-- Description: ${testCase.description}
-- Target Route: ${testCase.targetRoute || "/"}
-- Expected Result: ${testCase.expectedResult}
-${globalIns}
-${tempIns}
+                Test Case Details:
+                - Title: ${testCase.title}
+                - Description: ${testCase.description}
+                - Target Route: ${testCase.targetRoute || "/"}
+                - Expected Result: ${testCase.expectedResult}
+                ${globalIns}
+                ${tempIns}
 
-Source File Context for Reference (Read this to extract exact tags, component text, input fields, and class names):
-${repoContext || "No source file context available for this test case."}
+                Source File Context for Reference (Read this to extract exact tags, component text, input fields, and class names):
+                ${repoContext || "No source file context available for this test case."}
 
-Write only the JavaScript code that executes within an async function context.
+                Write only the JavaScript code that executes within an async function context.
 
-The following variables are pre-injected into your runtime environment:
-1. 'page': The Playwright Page object.
-2. 'console': The custom console object to output log messages.
+                The following variables are pre-injected into your runtime environment:
+                1. 'page': The Playwright Page object.
+                2. 'console': The custom console object to output log messages.
 
-IMPORTANT:
-- Do NOT assume Node.js 'assert' is available.
-- Do NOT import assert or any other module.
-- At the top of the generated script, always define this custom assert helper:
+                IMPORTANT:
+                - Do NOT assume Node.js 'assert' is available.
+                - Do NOT import assert or any other module.
+                - At the top of the generated script, always define this custom assert helper:
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message || 'Assertion failed');
-  }
-}
+                function assert(condition, message) {
+                if (!condition) {
+                    throw new Error(message || 'Assertion failed');
+                }
+                }
 
-Rules for your code:
-1. DO NOT import playwright, browserbase, assert, or any other modules.
-2. At the top of the script (after assert), define these helpers and use them:
+                Rules for your code:
+                1. DO NOT import playwright, browserbase, assert, or any other modules.
+                2. At the top of the script (after assert), define these helpers and use them:
 
-async function firstVisibleLocator(page, candidates, timeoutMs = 8000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    for (const spec of candidates) {
-      const loc = typeof spec === 'string' ? page.locator(spec).first() : spec;
-      if (await loc.isVisible({ timeout: 800 }).catch(() => false)) return loc;
-    }
-    await page.waitForTimeout(400);
-  }
-  throw new Error('No visible element matched: ' + candidates.map(c => typeof c === 'string' ? c : '[locator]').join(', '));
-}
+                async function firstVisibleLocator(page, candidates, timeoutMs = 8000) {
+                const deadline = Date.now() + timeoutMs;
+                while (Date.now() < deadline) {
+                    for (const spec of candidates) {
+                    const loc = typeof spec === 'string' ? page.locator(spec).first() : spec;
+                    if (await loc.isVisible({ timeout: 800 }).catch(() => false)) return loc;
+                    }
+                    await page.waitForTimeout(400);
+                }
+                throw new Error('No visible element matched: ' + candidates.map(c => typeof c === 'string' ? c : '[locator]').join(', '));
+                }
 
-async function fillFirstVisible(page, candidates, value) {
-  const loc = await firstVisibleLocator(page, candidates);
-  await loc.scrollIntoViewIfNeeded().catch(() => {});
-  await loc.fill(value, { timeout: 10000 });
-  return loc;
-}
+                async function fillFirstVisible(page, candidates, value) {
+                const loc = await firstVisibleLocator(page, candidates);
+                await loc.scrollIntoViewIfNeeded().catch(() => {});
+                await loc.fill(value, { timeout: 10000 });
+                return loc;
+                }
 
-async function resilientClick(loc, opts) {
-  const timeout = (opts && opts.timeout) || 8000;
-  try {
-    await loc.click({ timeout });
-  } catch (e1) {
-    try {
-      await loc.scrollIntoViewIfNeeded().catch(() => {});
-      await loc.click({ force: true, timeout: Math.min(timeout, 5000) });
-    } catch (e2) {
-      await loc.evaluate((n) => n.click());
-    }
-  }
-}
+                async function resilientClick(loc, opts) {
+                const timeout = (opts && opts.timeout) || 8000;
+                try {
+                    await loc.click({ timeout });
+                } catch (e1) {
+                    try {
+                    await loc.scrollIntoViewIfNeeded().catch(() => {});
+                    await loc.click({ force: true, timeout: Math.min(timeout, 5000) });
+                    } catch (e2) {
+                    await loc.evaluate((n) => n.click());
+                    }
+                }
+                }
 
-3. Navigate to the target route using:
-   \`await page.goto('${baseUrl}${testCase.targetRoute || ""}', { waitUntil: 'domcontentloaded', timeout: 20000 })\`
-   then \`await page.waitForTimeout(1500)\`.
-4. AUTH / PROTECTED ROUTES: If the target route looks protected (e.g. /dashboard, /settings, /admin, /profile):
-   - After navigation, check if you are on a login/sign-in page (URL or visible "Sign in"/"Log in" button).
-   - If login is required and no credentials exist in global instructions, log clearly and assert the login UI is visible instead of waiting 30s for dashboard-only fields.
-   - Never block on a single \`input[name="..."]\` for 30000ms — use fillFirstVisible with multiple candidates from source context (name, placeholder, label, role).
-5. Carefully analyze the Source File Context for EXACT and FALLBACK selectors (placeholder, label, role, text).
-6. Apply extreme selector resilience:
-   - Prefer getByRole, getByLabel, getByPlaceholder over brittle name= attributes when the repo shows labels.
-   - Use fillFirstVisible / firstVisibleLocator instead of raw locator.fill on one selector.
-   - Per-selector visibility checks should use short timeouts (under 2s), not 30s defaults.
-6b. CLICKS AND FORMS (critical):
-   - NEVER use \`page.locator('button[type="submit"]').first()\` or any unscoped \`button[type="submit"]\` — pages often have multiple submit buttons (e.g. "Add molecule" vs "Sign in"); you MUST click the button that belongs to the same form/card as the email/password fields.
-   - For auth flows: build a scoped container first, e.g. \`const auth = page.locator('form').filter({ has: page.getByLabel(/email|e-mail/i) }).or(page.getByRole('dialog')).first()\` (adapt from source context), then use \`auth.getByRole('button', { name: /sign in|log in|submit/i })\` or exact button text from the repo.
-   - If Playwright reports "intercepts pointer events" or overlay blocking: call \`resilientClick(loc)\` instead of plain \`click()\`; optionally \`await page.keyboard.press('Escape')\` once to dismiss overlays before clicking.
-7. Introduce generous settling times:
-   - Add \`await page.waitForTimeout(1000)\` after major actions (clicks, inputs, typing, form submissions) to allow React, Next.js, or server state updates to propagate and elements to render.
-8. Use lenient, substring-based assertions:
-   - Do NOT use strict case-sensitive equality matches on text contents.
-   - Instead, search for presence or substring content in a relaxed, case-insensitive way. E.g.:
-     \`const bodyText = await page.innerText('body');\`
-     \`assert(bodyText.toLowerCase().includes('${testCase?.expectedResult?.toLowerCase().replace(/'/g, "\\'")}'), 'Expected result state not matched');\`
-   - Or assert visibility of key success elements instead of exact string matching.
-9. Print descriptive logs at each step using \`console.log()\` to make debugging a breeze for the user.
-10. Return ONLY the raw JavaScript executable code.
-11. DO NOT wrap the code in markdown code blocks like \`\`\`javascript or \`\`\`.
-12. DO NOT include any explanation.
-13. Just return the executable code.
-`;
+                3. Navigate to the target route using:
+                \`await page.goto('${baseUrl}${testCase.targetRoute || ""}', { waitUntil: 'domcontentloaded', timeout: 20000 })\`
+                then \`await page.waitForTimeout(1500)\`.
+                4. AUTH / PROTECTED ROUTES: If the target route looks protected (e.g. /dashboard, /settings, /admin, /profile):
+                - After navigation, check if you are on a login/sign-in page (URL or visible "Sign in"/"Log in" button).
+                - If login is required and no credentials exist in global instructions, log clearly and assert the login UI is visible instead of waiting 30s for dashboard-only fields.
+                - Never block on a single \`input[name="..."]\` for 30000ms — use fillFirstVisible with multiple candidates from source context (name, placeholder, label, role).
+                5. Carefully analyze the Source File Context for EXACT and FALLBACK selectors (placeholder, label, role, text).
+                6. Apply extreme selector resilience:
+                - Prefer getByRole, getByLabel, getByPlaceholder over brittle name= attributes when the repo shows labels.
+                - Use fillFirstVisible / firstVisibleLocator instead of raw locator.fill on one selector.
+                - Per-selector visibility checks should use short timeouts (under 2s), not 30s defaults.
+                6b. CLICKS AND FORMS (critical):
+                - NEVER use \`page.locator('button[type="submit"]').first()\` or any unscoped \`button[type="submit"]\` — pages often have multiple submit buttons (e.g. "Add molecule" vs "Sign in"); you MUST click the button that belongs to the same form/card as the email/password fields.
+                - For auth flows: build a scoped container first, e.g. \`const auth = page.locator('form').filter({ has: page.getByLabel(/email|e-mail/i) }).or(page.getByRole('dialog')).first()\` (adapt from source context), then use \`auth.getByRole('button', { name: /sign in|log in|submit/i })\` or exact button text from the repo.
+                - If Playwright reports "intercepts pointer events" or overlay blocking: call \`resilientClick(loc)\` instead of plain \`click()\`; optionally \`await page.keyboard.press('Escape')\` once to dismiss overlays before clicking.
+                7. Introduce generous settling times:
+                - Add \`await page.waitForTimeout(1000)\` after major actions (clicks, inputs, typing, form submissions) to allow React, Next.js, or server state updates to propagate and elements to render.
+                8. Use lenient, substring-based assertions:
+                - Do NOT use strict case-sensitive equality matches on text contents.
+                - Instead, search for presence or substring content in a relaxed, case-insensitive way. E.g.:
+                    \`const bodyText = await page.innerText('body');\`
+                    \`assert(bodyText.toLowerCase().includes('${testCase?.expectedResult?.toLowerCase().replace(/'/g, "\\'")}'), 'Expected result state not matched');\`
+                - Or assert visibility of key success elements instead of exact string matching.
+                9. Print descriptive logs at each step using \`console.log()\` to make debugging a breeze for the user.
+                10. Return ONLY the raw JavaScript executable code.
+                11. DO NOT wrap the code in markdown code blocks like \`\`\`javascript or \`\`\`.
+                12. DO NOT include any explanation.
+                13. Just return the executable code.
+            `;
 
             const response = await ai.models.generateContent({
                 model: "gemini-3.1-flash-lite",
