@@ -26,6 +26,7 @@
     "@speechmatics/real-time-client": "^8.3.2",
     "@stripe/stripe-js": "^3.0.7",
     "@tabler/icons-react": "^3.44.0",
+    "@vercel/oidc-aws-credentials-provider": "^3.2.1",
     "axios": "^1.16.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
