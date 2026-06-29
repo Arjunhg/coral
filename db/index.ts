@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { AuroraDSQLPool } from "@aws/aurora-dsql-node-postgres-connector";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 import * as schema from "./schema";
 
 // Aurora DSQL connection (replaces the Neon HTTP serverless driver).
@@ -60,6 +61,9 @@ function createPool() {
     //   customCredentialsProvider: awsCredentialsProvider({
     //     roleArn: process.env.AWS_ROLE_ARN!,
     //   }),
+    customCredentialsProvider: awsCredentialsProvider({
+      roleArn: process.env.AWS_ROLE_ARN!,
+    }),
   });
 
   // An idle pooled connection can be closed by DSQL or the network. Without this
