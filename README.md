@@ -1,450 +1,554 @@
-﻿# Scriptless.ai + Coral
+<div align="center">
 
-AI-first browser test automation for GitHub repos, now with Coral-powered federated context, explainable query traces, natural language SQL exploration, smart test prioritization, and Splunk-backed failure context.
+# ⚡ scriptless.ai
 
-## What This Project Does
+### Describe what to test. Watch it test itself.
 
-Scriptless helps teams:
-- connect a GitHub repo
-- generate test cases with AI
-- execute tests in Browserbase cloud browsers
-- diagnose failures with screenshot + vision analysis
-- enrich failures with real cross-system context via Coral (GitHub, Sentry, Linear, Splunk)
+**AI-native, scriptless browser test automation for your GitHub repositories.**
+Connect a repo → AI reads your code → it writes the test cases → it writes the Playwright script → it runs in a real cloud browser → and when something breaks, it tells you *why*.
 
-The recent updates make the system significantly more explainable and more useful for daily engineering workflows.
+<br/>
 
-## Major Recent Updates
+[![Live Demo](https://img.shields.io/badge/▶_Live_Demo-scriptless--ai-6366f1?style=for-the-badge)](https://scriptless-ai-eta.vercel.app/)
+&nbsp;
+[![Next.js](https://img.shields.io/badge/Next.js_16-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
+[![Aurora DSQL](https://img.shields.io/badge/Aurora_DSQL-FF9900?style=for-the-badge&logo=amazon-aws&logoColor=white)](https://aws.amazon.com/rds/aurora/dsql/)
+[![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev)
 
-1. Related Context in failed test runs (Coral-enriched)
-2. Agent Trace tab (every Coral query is logged)
-3. Failure Analysis upgraded with contextual references
-4. Coral Explorer (NL -> SQL -> Results)
-5. Voice data queries (same result path as typed queries)
-6. Smart Run (prioritize tests based on recent changes)
-7. Splunk source support in the shared Coral sidecar
+<br/>
 
-## Guidance
+**[🚀 Try it live](https://scriptless-ai-eta.vercel.app/)** · **[✨ Features](#-what-you-can-do)** · **[🧭 How it works](#-how-it-works-the-full-flow)** · **[🏗 Architecture](#-architecture)** · **[🛠 Setup](#-getting-started)**
 
-This repo is currently framed for the **Platform & Developer Experience** track.
+</div>
 
-Why it fits:
-- failing browser tests immediately pull related operational context from Splunk
-- the same cross-source data is explorable through Coral Explorer and voice queries
-- judges can use the shared/demo Coral sidecar without connecting their own Splunk first
+---
 
-## Architecture
+## 📖 Table of Contents
 
-### Overall Application Architecture
+- [The Pitch](#-the-pitch)
+- [Why It's Different](#-why-its-different)
+- [What You Can Do](#-what-you-can-do)
+- [How It Works — The Full Flow](#-how-it-works-the-full-flow)
+- [Architecture](#-architecture)
+- [The Data Layer: Aurora DSQL](#-the-data-layer-aurora-dsql)
+- [Tech Stack](#-tech-stack)
+- [Getting Started](#-getting-started)
+- [Environment Variables](#-environment-variables)
+- [Project Structure](#-project-structure)
+- [FAQ](#-faq)
+
+---
+
+## 🎯 The Pitch
+
+Writing end-to-end browser tests is the chore nobody wants. You context-switch out of building, hand-write brittle selectors, babysit flaky runs, and then re-write half of it the moment the UI changes. Most teams just… don't. Coverage rots.
+
+**scriptless.ai removes the writing entirely.**
+
+You point it at a GitHub repository. It reads the actual source — your routes, components, forms, and inputs — and reasons about what a real user would do. From that understanding it generates a suite of meaningful test cases, turns each one into an executable **Playwright** script, and runs it inside a **real, isolated cloud browser**. There is no test file to author, no selector to maintain, no CI YAML to wrestle.
+
+And when a test fails, it doesn't just hand you a red ✗. It captures the failure screenshot, runs **vision analysis** to explain what went wrong on screen, pulls **related engineering context** (recent commits, open issues, error reports) that might explain the regression, and surfaces a plain-English root-cause hypothesis with a recommended next action.
+
+> **In one line:** scriptless.ai is an autonomous QA engineer that reads your repo, writes the tests, runs them in the cloud, and investigates its own failures.
+
+---
+
+## 💡 Why It's Different
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+#### 🧠 It understands your code, not just your URL
+Test cases are grounded in your **actual source files** pulled from GitHub — exact component text, input names, labels, and routes — so the generated steps and selectors map to reality instead of guesses.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🪄 Zero scripts, truly scriptless
+The AI emits a self-contained Playwright body with resilient locators, auto-retries, and lenient assertions. You never open a `.spec.ts`. Regenerate any test on demand when your UI shifts.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+#### ☁️ Runs in real cloud browsers
+Every run executes in a fresh, isolated **Browserbase** Chromium session with a full session recording — not a mocked DOM, not a headless shim on your laptop.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🔍 Failures that explain themselves
+Screenshot + **vision analysis** + cross-system context → a real root-cause hypothesis ("this looks like a regression from a recent commit"), not a stack trace dump.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+#### 🎙 Drive it with your voice
+Speak your intent — *"run the failing tests"*, *"show me recent errors for checkout"* — and the same pipelines fire as if you'd clicked.
+
+</td>
+<td width="50%" valign="top">
+
+#### 🌐 Built on a serverless, distributed DB
+The entire platform runs on **Amazon Aurora DSQL** — active-active, serverless Postgres with IAM-token auth and no connection string to leak.
+
+</td>
+</tr>
+</table>
+
+---
+
+## ✨ What You Can Do
+
+| Capability | What it gives you |
+|---|---|
+| 🔗 **Connect a GitHub repo** | OAuth in, pick any repository, and scriptless reads its source tree as test context. |
+| 🤖 **AI test-case generation** | Get a prioritized suite of realistic test cases (title, description, type, priority, target route + files) in seconds. |
+| 🎬 **Scriptless execution** | Each test is compiled to a Playwright script and run in a real cloud browser — with a full replayable session recording. |
+| 🩺 **Smart failure analysis** | Vision-based screenshot diagnosis + related context → a root-cause hypothesis and a recommended fix path. |
+| 🔭 **Agent Trace** | Every query the system runs on your behalf is logged — fully transparent, no black box. |
+| ⚡ **Smart Run** | Prioritize the tests most likely impacted by your *recent* commits, so you run what matters first. |
+| 🗣 **Natural-language data explorer** | Ask questions about your engineering data in plain English; the system grounds and generates safe, read-only SQL and shows you the results. |
+| 🎙 **Voice commands** | Run tests, filter results, and ask data questions hands-free. |
+| 💳 **Credits & billing** | Usage-metered credits with Stripe checkout built in. |
+
+---
+
+## 🧭 How It Works — The Full Flow
+
+Here's exactly what *you* do and what *you can expect* at each step.
+
+```mermaid
+flowchart TD
+    A([👤 Sign in with Clerk]) --> B[🔗 Connect GitHub & pick a repo]
+    B --> C[🤖 AI reads the repo source<br/>and generates test cases]
+    C --> D{Run a test}
+    D --> E[🧩 AI generates a Playwright script<br/>grounded in your real source files]
+    E --> F[☁️ Executes in a Browserbase<br/>cloud browser + session recording]
+    F --> G{Result?}
+    G -->|✅ Passed| H[Status: passed<br/>logs + replay saved]
+    G -->|❌ Failed| I[📸 Screenshot captured]
+    I --> J[👁 Vision analysis +<br/>related engineering context]
+    J --> K[🩺 Root-cause hypothesis<br/>+ recommended next action]
+    H --> L[(🗄 Aurora DSQL)]
+    K --> L
+```
+
+<br/>
+
+<details open>
+<summary><b>① Sign in &amp; connect a repository</b></summary>
+
+You authenticate with **Clerk**, then connect **GitHub** via OAuth and select a repository.
+**Expect:** your repos listed in the workspace, each one ready to expand into a test suite. New accounts start with credits to spend on generation and runs.
+
+</details>
+
+<details>
+<summary><b>② Generate test cases with AI</b></summary>
+
+scriptless walks the repository tree, picks the meaningful source files (routes, components, `lib/`, `api/`…), and feeds them to a reasoning model.
+**Expect:** a generated suite of test cases — each with a title, description, type, priority, target route, and the source files it's grounded in. *(Costs credits; deducted automatically.)*
+
+</details>
+
+<details>
+<summary><b>③ Run a test (the scriptless part)</b></summary>
+
+Hit **Run**. The system fetches the relevant source files for that test, then prompts the model to write a complete **Playwright** script — with resilient locators, auto-retry helpers, sensible waits, and lenient assertions — and executes it in a fresh **Browserbase** Chromium session.
+**Expect:** a live execution modal with streaming logs, a terminal output tab, the generated script, and a **session recording** you can replay frame-by-frame.
+
+</details>
+
+<details>
+<summary><b>④ When it passes</b></summary>
+
+**Expect:** status flips to `passed`, logs + session URL are stored, and credits are settled. Done.
+
+</details>
+
+<details>
+<summary><b>⑤ When it fails — the investigation</b></summary>
+
+A failure kicks off the diagnosis pipeline automatically:
+- 📸 **Screenshot** of the page at the moment of failure.
+- 👁 **Vision analysis** describes what's on screen and the most likely root cause.
+- 🔭 **Related context** surfaces recent commits, open issues, and error reports that could explain the break.
+- 🩺 A concise **root-cause hypothesis** tells you whether to fix the test, fix the app, or wait on an upstream fix.
+
+**Expect:** tabs for *Failure Analysis*, *Related Context*, *Agent Trace*, *Terminal Output*, and the *Playwright Script* — everything you need to act, in one modal.
+
+</details>
+
+<details>
+<summary><b>⑥ Work faster: Smart Run, the Explorer, and voice</b></summary>
+
+- **Smart Run** ranks tests by overlap with your most recent commits — run the highest-risk tests first.
+- **Explorer** turns plain-English questions into safe, read-only SQL over your connected engineering data and renders the results.
+- **Voice** drives all of the above hands-free through the same pipelines.
+
+</details>
+
+---
+
+## 🏗 Architecture
+
+scriptless.ai is a single **Next.js 16** application (App Router, server routes) that orchestrates a set of specialized cloud services, with **Amazon Aurora DSQL** as the system of record.
 
 ```mermaid
 flowchart LR
-  U[User in Browser] --> N[Next.js App]
+    U([👤 User / Browser])
+    V([🎙 Voice · Speechmatics])
 
-  subgraph Core
-    N --> DB[(Postgres via Drizzle)]
-    N --> BB[Browserbase]
-    N --> AI[Gemini + Featherless]
-    N --> SM[Speechmatics]
-  end
+    U --> APP
+    V --> APP
 
-  subgraph Coral Integration
-    N --> CClient[lib/coral/client.ts]
-    CClient --> Sidecar[Coral Sidecar HTTP service]
-    Sidecar --> CoralCLI[coral CLI]
-    CoralCLI --> Sources[(GitHub/Sentry/Linear/Splunk/etc)]
-  end
+    subgraph APP[Next.js 16 App · App Router + API Routes]
+        AUTH[Clerk Auth]
+        GEN[Test-case & script generation]
+        RUN[Test runner]
+        DIAG[Failure diagnosis]
+        EXP[NL → SQL explorer]
+        PAY[Credits / billing]
+    end
 
-  N --> Expose["/api/coral/expose/*"]
-  CoralCLI --> Expose
+    APP -->|Drizzle ORM · node-postgres · IAM token| DSQL[(🗄 Amazon Aurora DSQL<br/>serverless · active-active Postgres)]
+
+    GEN --> GH[GitHub API<br/>source + OAuth]
+    GEN --> LLM[Reasoning + Vision models]
+    RUN --> BB[Browserbase<br/>cloud Chromium]
+    DIAG --> LLM
+    DIAG --> CTX[Federated read-only<br/>engineering context]
+    EXP --> CTX
+    PAY --> ST[Stripe]
 ```
 
-### Why Sidecar Exists
+> **A note on diagrams:** the system above is the source of truth. The repo also ships a UI **sitemap** reference (`architecture.png`) showing how screens connect; treat it as a navigational map of the front end, while the diagram here describes the runtime architecture and the data layer.
 
-Coral is executed as a CLI binary, not as an in-process npm library.
-
-The sidecar is required because it provides:
-- a stable runtime for the Coral binary and OS dependencies
-- a secure HTTP bridge for Next.js server routes
-- persistent Coral source configuration via mounted `/coral-config`
-- operational isolation from web request handling
-
-Without a sidecar (or equivalent long-running host), hosted Next.js alone cannot reliably run and persist Coral source state.
-
-### Sidecar Request Flow
+<details>
+<summary><b>Request lifecycle of a single test run</b></summary>
 
 ```mermaid
-flowchart LR
-  A["Next.js API route"] --> B["lib/coral/client.ts"]
+sequenceDiagram
+    participant U as User
+    participant API as Next.js API route
+    participant GH as GitHub
+    participant LLM as Reasoning Model
+    participant BB as Browserbase
+    participant V as Vision Model
+    participant DB as Aurora DSQL
 
-  B -->|"HTTP + X-Sidecar-Secret"| C["Sidecar: /sql, /list-catalog, /list-columns"]
-
-  C --> D["execFile(coral)"]
-  D --> E["/coral-config/config.json"]
-  D --> F["External source APIs"]
-
-  D --> C
-  C --> A
+    U->>API: Run test #42
+    API->>DB: Load test case + check credits
+    API->>GH: Fetch target source files
+    API->>LLM: Generate Playwright script (grounded in source)
+    API->>BB: Open cloud browser, execute script
+    alt Passed
+        BB-->>API: success + logs
+        API->>DB: status = passed, store logs + recording
+    else Failed
+        BB-->>API: error + screenshot
+        API->>V: Analyze screenshot + related context
+        V-->>API: Root-cause hypothesis
+        API->>DB: status = failed, store analysis + context
+    end
+    API-->>U: Result, logs, recording, analysis
 ```
 
-### Optional: Scriptless as a Coral Source (`/api/coral/expose/*`)
-
-This endpoint family is **optional** and can be removed without breaking the core app.
-
-What it does:
-- Exposes Scriptless datasets (`test_cases`, `repositories`) as a Coral source.
-- Lets Coral query Scriptless data and join it with external sources (GitHub, Linear, Sentry).
-
-How it differs from the standard Coral routes:
-- Standard routes: **App → Coral sidecar → external sources**
-- Expose routes: **Coral → Scriptless app (via API key)**
-
-If you do not need Coral to query Scriptless data, you can remove `/api/coral/expose/*` and the app will still work normally. But you still need your own sidecar implementation.
-
-For the Splunk-specific architecture diagram, see [SPLUNK_ARCHITECTURE.md](SPLUNK_ARCHITECTURE.md).
-
-## Usage Scope (Individual or Single-Operator Organization)
-
-This Milestone A implementation currently targets **individual developers** or **single-operator organization setups** with a shared Coral sidecar config.
-
-Why:
-- Coral connects to data sources using **personal access tokens** (for example GitHub, Linear, Sentry).
-- Splunk is configured once on the sidecar host with operator-owned `SPLUNK_HOST` and `SPLUNK_TOKEN`.
-- Those tokens are tied to a single user account and are provisioned manually.
-- Coral is a compiled Rust CLI, so it must run in a **separate sidecar** process with a local config directory.
-- The sidecar persists source configuration and secrets on disk, which is not multi-tenant by default.
-
-What this means in practice:
-- You (the operator) configure sources once on the sidecar host.
-- All users of this app consume the same shared, operator-owned context, including shared/demo Splunk data.
-- End users do not configure Coral themselves.
-
-Group or team-wide Coral setups can be supported with additional infrastructure (separate sidecars per team, centralized secret management, and strict tenant isolation). That is outside the scope of this project today.
-
-## Key Feature Deep Dive
-
-Each section includes:
-- How it works
-- Why it is useful
-- How to test
+</details>
 
 ---
 
-## 1) Related Context Tab (failed tests)
+## 🗄 The Data Layer: Aurora DSQL
 
-### How it works
-When a test fails, `app/api/test-cases/run/route.ts` runs Coral queries to fetch related items from connected sources (for example GitHub issues, commits, Sentry errors, Linear issues, and Splunk log events) and stores them in `failure_context`.
+The platform's database runs on **Amazon Aurora DSQL** — AWS's **serverless, distributed, active-active** SQL database. We migrated the entire datastore from a traditional serverless Postgres (Neon HTTP driver) to DSQL. This was a deliberate, non-trivial transition, and it's one of the more interesting parts of the build.
 
-The execution modal shows these in the **Related Context** tab.
+### Why move to Aurora DSQL?
 
-### Why it is useful
-Failure investigation gets immediate cross-system signals instead of only screenshot output.
+- **Serverless & distributed by design** — active-active, multi-writer scaling with no instances to size or fail over.
+- **No static database password** — connections authenticate with a **short-lived IAM token**, so there's no long-lived secret to leak or rotate.
+- **Operational simplicity at the edge** — a great fit for serverless Next.js functions on Vercel, where every invocation is short-lived.
 
-### How to test
-1. Run a test that fails.
-2. Open test details.
-3. Open **Related Context**.
-4. Confirm items appear (issues, commits, sentry errors, linear tasks, and/or Splunk events depending on configured sources).
+### What the transition required (and why)
 
----
+Aurora DSQL is PostgreSQL **wire-compatible** but intentionally drops features to enable distributed scaling. Adapting the app meant several concrete changes:
 
-## 2) Agent Trace Tab
+| What changed | Why DSQL requires it | How we handled it |
+|---|---|---|
+| **`SERIAL` → integer identity** | DSQL has no `SERIAL` pseudo-type | Every PK is now `integer … generatedAlwaysAsIdentity({ cache: 65536 })` (the mandatory `CACHE` clause is carried in the Drizzle schema) |
+| **Foreign keys removed** | DSQL doesn't enforce FK constraints | Referential integrity is enforced in **application code** before writes |
+| **`ON DELETE CASCADE` removed** | Cascades aren't supported | Dependent rows are cleaned up explicitly in app logic |
+| **HTTP driver → wire protocol** | The Neon HTTP serverless driver is incompatible | Switched to **`node-postgres` (`pg`)** over the real Postgres wire protocol |
+| **IAM-token auth** | No static password; tokens are short-lived | `AuroraDSQLPool` mints/refreshes an IAM token **per new connection** automatically — no manual token handling |
+| **Optimistic concurrency (OCC)** | DSQL uses Repeatable-Read isolation + OCC; write/write conflicts abort one side | Conflict-prone flows (get-or-create, upserts) are wrapped in an **OCC retry** with backoff |
+| **Async, one-statement-per-tx DDL** | DSQL applies DDL asynchronously and forbids mixing DDL + DML | Schema is applied as a **single fresh baseline**, statement-by-statement, instead of replaying migration history |
 
-### How it works
-Coral queries are wrapped by `tracedSql` and persisted to `agent_queries` with metadata:
-- run id
-- source
-- SQL text
-- row count
-- duration
-- status
-- role (`failure_enricher`, `smart_run`, `explorer`)
+The connection layer (`db/index.ts`) is a cached `AuroraDSQLPool` with TLS required, small pool size for serverless, and connection recycling before DSQL's 1-hour connection cap. The query surface — Drizzle's `db.select()/insert()/update()` — is **unchanged**, so the migration touched the connection, schema, and a couple of concurrency-sensitive routes, not the hundreds of call sites.
 
-The modal **Agent Trace** tab reads `GET /api/test-cases/[id]/trace`.
-
-### Why it is useful
-No black-box behavior. You can inspect every query the system executed and why outcomes happened.
-
-### How to test
-1. Trigger a failed run and/or Smart Run.
-2. Open the same test in the execution modal.
-3. Open **Agent Trace**.
-4. Expand run groups and SQL entries.
-
-For implementation details, see [TRACE.md](TRACE.md).
+> 📄 The complete migration plan — constraints, PK strategy, provisioning, data runbook, and rollback — lives in [`MIGRATION.md`](MIGRATION.md).
 
 ---
 
-## 3) Failure Analysis (context-aware vision)
+## 🧩 Tech Stack
 
-### How it works
-`analyzeScreenshot` now receives Coral context items and prompts the vision model to use them as untrusted supporting signals.
-
-It can reference concrete artifacts (for example issue titles or commit messages) when forming root cause hypotheses.
-
-### Why it is useful
-Moves from generic screenshot commentary to investigation-ready analysis tied to real ongoing work.
-
-### How to test
-1. Fail a test where Related Context returns data.
-2. Open **Failure Analysis**.
-3. Verify analysis references meaningful related context when available.
-
----
-
-## 4) Coral Explorer (NL -> SQL -> Results)
-
-### How it works
-- `POST /api/coral/nl-to-sql` generates safe read-only SQL grounded in live Coral catalog.
-- `POST /api/coral/query` executes SQL through sidecar.
-- UI (`CoralExplorer`) supports ask/edit/run workflow.
-
-### Why it is useful
-Teams can query federated engineering data without writing SQL from scratch.
-
-### How to test
-1. Open Workspace and click **Open Explorer**.
-2. Ask: `Show me recent Splunk error events for the checkout service`.
-3. Review generated SQL.
-4. Run it and verify table results render.
+| Layer | Technology |
+|---|---|
+| **Framework** | Next.js 16 (App Router) · React 19 · TypeScript |
+| **Styling** | Tailwind CSS v4 · Radix UI · Framer Motion |
+| **Database** | Amazon Aurora DSQL · Drizzle ORM · node-postgres |
+| **Auth** | Clerk |
+| **Source / VCS** | GitHub OAuth + REST API |
+| **Reasoning & NL→SQL** | Reasoning model (test generation) · Gemini (script + SQL generation) |
+| **Vision** | Vision model for failure-screenshot analysis |
+| **Browser automation** | Browserbase (cloud Chromium) · Playwright |
+| **Voice** | Speechmatics real-time |
+| **Billing** | Stripe |
 
 ---
 
-## 5) Voice Data Queries
+## 🚀 Getting Started
 
-### How it works
-`QUERY_DATA` intent was added to `commandParser`.
-Voice command -> same Coral Explorer pipeline used by typed input.
+### Prerequisites
 
-### Why it is useful
-One parser and one data path for both modalities. Faster demos and faster operator workflows.
+- **Node.js 20+**
+- An **AWS account** with an Aurora DSQL cluster
+- Accounts / API keys for: **Clerk**, **GitHub OAuth app**, **Browserbase**, **Stripe**, **Speechmatics**, and your model providers (**Gemini** + reasoning/vision)
 
-### How to test
-1. Start voice mode.
-2. Speak a data query similar to the text query above.
-3. Verify Explorer opens and runs the query path, including Splunk-oriented queries.
-
----
-
-## 6) Smart Run
-
-### How it works
-Smart Run uses Coral commit signals plus local test metadata to prioritize likely impacted tests.
-It can also fall back when file-level commit metadata is missing.
-
-### Why it is useful
-Run the most relevant tests first after recent code changes.
-
-### How to test
-1. Open a repository section in workspace.
-2. Click **Smart Run**.
-3. Review ranked tests and rationale.
-4. Click **Run these tests** and verify execution modal queue is prefilled.
-
-For deeper logic and scoring notes, see [SMART_RUN.md](SMART_RUN.md).
-
----
-
-## 7) Scriptless as a Coral Source
-
-### How it works
-`/api/coral/expose/[resource]` exposes Scriptless datasets (`test_cases`, `repositories`) using per-user API key auth.
-
-`coral-sources/scriptless.yaml` can be added to a local Coral installation.
-
-### Why it is useful
-Users can join Scriptless data with any other Coral-connected source in their own Coral environment.
-
-### How to test
-1. Generate key via `POST /api/coral/keys` (authenticated user).
-2. Add source locally:
-   ```bash
-   SCRIPTLESS_API_KEY=sk_... coral source add --file ./coral-sources/scriptless.yaml
-   ```
-3. Run:
-   ```bash
-   coral source test scriptless
-   coral sql "SELECT count(*) AS n FROM scriptless.test_cases"
-   ```
-
-## Sidecar Setup
-
-You can run sidecar on Railway or EC2.
-
-### Required Environment Variables
-
-#### Next.js app
-- `CORAL_SIDECAR_URL`
-- `CORAL_SIDECAR_SECRET`
-
-#### Sidecar
-- `SIDECAR_SHARED_SECRET` (must match app secret)
-- `CORAL_CONFIG_DIR=/coral-config`
-- `SPLUNK_HOST` (sidecar host only; never expose to the Next.js app)
-- `SPLUNK_TOKEN` (sidecar host only; never expose to the Next.js app)
-- optionally `CORAL_BIN` (default `coral`)
-
-## Sidecar on Railway
-
-1. Deploy sidecar service using `sidecar/Dockerfile`.
-2. Set environment variables in Railway.
-3. Add the Splunk source on the sidecar host:
-   ```bash
-   coral source add --file ./coral-sources/splunk.yaml
-   coral source test splunk
-   ```
-4. Ensure port binding works (`PORT`).
-5. Validate:
-   - `GET /health`
-   - authenticated `GET /list-catalog`
-
-## Sidecar on EC2 (Docker)
-
-1. Install Docker on EC2.
-2. Build image in sidecar directory:
-   ```bash
-   docker build -t coral-sidecar .
-   ```
-3. Run with persistent mount:
-   ```bash
-   docker run -d \
-     --name coral-sidecar \
-     -p 3000:3000 \
-     -v /coral-config:/coral-config \
-     --env-file .env \
-     --restart unless-stopped \
-     coral-sidecar
-   ```
-4. Health check:
-   ```bash
-   curl http://<host>:3000/health
-   ```
-5. Add and validate Splunk:
-   ```bash
-   coral source add --file ./coral-sources/splunk.yaml
-   coral source test splunk
-   coral sql "SELECT name, datatype, total_event_count FROM splunk.indexes LIMIT 5"
-   ```
-
-### Splunk Source Helper
-
-If `sidecar/.env.local` already has `SPLUNK_HOST` and `SPLUNK_TOKEN`, run:
+### 1. Clone & install
 
 ```bash
-npm run coral:splunk:validate
+git clone <your-repo-url>
+cd scriptless.ai
+npm install
 ```
 
-This loads the env vars, adds `coral-sources/splunk.yaml`, runs `coral source test splunk`, and executes a few sample SQL queries.
+### 2. Configure environment
 
-### EC2 Sidecar (Redacted)
+Create a `.env` file in the project root and fill in the values from the [Environment Variables](#-environment-variables) section below.
 
-![EC2 sidecar instance (redacted)](public/sidecar.png)
+### 3. Provision the database schema
 
-## ENV Required
+The schema is applied **directly** to your DSQL cluster (DSQL doesn't replay standard migration history — see [the DSQL section](#-the-data-layer-aurora-dsql)).
 
-```
-NEXT_PUBLIC_APP_URL
-DATABASE_URL
+```bash
+# Apply the baseline schema to your DSQL cluster
+node scripts/apply-dsql-ddl.mjs
 
-CORAL_SIDECAR_URL
-CORAL_SIDECAR_SECRET
+# (optional) verify the connection + tables
+node scripts/verify-dsql.mjs
 
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-CLERK_SECRET_KEY
-NEXT_PUBLIC_CLERK_SIGN_IN_URL
-NEXT_PUBLIC_CLERK_SIGN_UP_URL
-
-STRIPE_SECRET_KEY
-STRIPE_WEBHOOK_SECRET
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-
-GITHUB_CLIENT_ID
-GITHUB_CLIENT_SECRET
-GITHUB_REDIRECT_URI
-
-GEMINI_API_KEY
-
-BROWSERBASE_PROJECT_ID
-BROWSERBASE_API_KEY
-
-FEATHERLESS_API_KEY
-FEATHERLESS_TEXT_MODEL
-FEATHERLESS_VISION_MODEL
-
-SPEECHMATICS_API_KEY
+# Inspect data with Drizzle Studio
+npm run db:studio
 ```
 
-## Troubleshooting (Sidecar + Coral)
+### 4. Run the app
 
-### 1) GitHub clone authentication failed on EC2
-- GitHub password auth is not supported for git operations.
-- Use public clone URL, PAT, or SSH keys.
+```bash
+npm run dev
+```
 
-### 2) `/coral-config` exists but not visible in home directory
-- `/coral-config` is an absolute root path, not under `/home/ubuntu`.
-- Check it with:
-  ```bash
-  ls -ld /coral-config
-  ```
+Open **[http://localhost:4000](http://localhost:4000)** 🎉
 
-### 3) Docker permission denied (`/var/run/docker.sock`)
-- Use `sudo` or add current user to `docker` group.
+<details>
+<summary><b>Available scripts</b></summary>
 
-### 4) `pull access denied for coral-sidecar`
-- Image is not built locally yet.
-- Run `docker build -t coral-sidecar .` before `docker run`.
+| Script | Description |
+|---|---|
+| `npm run dev` | Start the dev server on port **4000** |
+| `npm run build` | Production build |
+| `npm run start` | Start the production server |
+| `npm run lint` | Run ESLint |
+| `npm run db:generate` | Generate Drizzle SQL from the schema |
+| `npm run db:push` | Push schema changes (review for DSQL compatibility first) |
+| `npm run db:studio` | Open Drizzle Studio |
 
-### 5) `coral_query_failed` with empty rows in app logs
-- Usually schema/column mismatch in SQL against actual connected source.
-- Fetch catalog and verify required filters/column names.
+</details>
 
-### 6) Trace endpoint returns `403 forbidden`
-- Ownership check mismatch (`test_cases.user_id` format mismatch).
-- Ensure route accepts both local user id and Clerk id where needed.
+---
 
-### 7) Splunk source fails on `https://localhost:8089`
-- Local Splunk Enterprise commonly uses a self-signed TLS certificate.
-- Coral does not skip TLS verification for HTTP sources.
-- Trust the Splunk certificate on the sidecar host or point `SPLUNK_HOST` at a trusted TLS endpoint, then rerun `npm run coral:splunk:validate`.
+## 🔐 Environment Variables
 
-## Suggested Demo Flow
+<details open>
+<summary><b>App</b></summary>
 
-Use this flow to show key value quickly:
+```env
+NEXT_PUBLIC_APP_URL=http://localhost:4000
+```
 
-1. Open workspace and pick a previously failed test.
-2. Show **Related Context** with federated issue/commit/error signals.
-3. Show **Agent Trace** and expand query history.
-4. Show **Failure Analysis** referencing real context signals.
-5. Open **Coral Explorer**, ask a natural language query, run generated SQL.
-   - Good demo prompt: `show recent Splunk error events for checkout`
-6. Trigger same query via voice and show identical result path.
-7. Use **Smart Run** and execute prioritized tests.
-8. Open `coral-sources/scriptless.yaml` and explain bring-your-own-Coral source integration.
+</details>
 
-## Relevant Public Docs in this Repo
+<details>
+<summary><b>Database — Amazon Aurora DSQL</b></summary>
 
-- [SMART_RUN.md](SMART_RUN.md)
-- [TRACE.md](TRACE.md)
+```env
+DSQL_ENDPOINT=<clusterId>.dsql.<region>.on.aws
+AWS_REGION=us-east-1
 
-## Security Notes
+# Credentials: an attached IAM role is preferred. For local dev / static creds:
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_SESSION_TOKEN=...            # if using temporary credentials
 
-- Never expose sidecar secret in client code.
-- Keep `SIDECAR_SHARED_SECRET` and API keys server-side.
-- Rotate leaked API keys and revoke old ones.
-- Keep sidecar endpoint restricted to trusted callers.
+# On Vercel with OIDC federation:
+AWS_ROLE_ARN=arn:aws:iam::<account-id>:role/<role>
 
-## Quick Verification Checklist
+# Used ONLY by drizzle-kit tooling (db:generate / db:studio)
+DATABASE_URL=postgresql://...
+```
 
-- [ ] Sidecar health endpoint returns version
-- [ ] `/api/coral/query` GET reports available
-- [ ] `coral.tables` and sidecar `/list-catalog` include `splunk.*`
-- [ ] `coral.columns` and sidecar `/list-columns` resolve Splunk columns
-- [ ] Failing test stores and displays Related Context
-- [ ] Related Context shows at least one Splunk event on a failing run
-- [ ] Failure Analysis includes context-aware references
-- [ ] Agent Trace shows grouped query runs
-- [ ] Agent Trace records `splunk.search_results` when Splunk enrichment runs
-- [ ] Coral Explorer can generate and run SQL
-- [ ] Coral Explorer can answer a Splunk log query
-- [ ] Voice query opens and runs Explorer pipeline
-- [ ] Smart Run returns prioritized tests and launches queue
-- [ ] Scriptless source can be added with `scriptless.yaml`
+The runtime needs IAM permission to mint a DSQL connection token (`dsql:DbConnectAdmin`). See [`MIGRATION.md`](MIGRATION.md#53-iam-permissions).
+
+</details>
+
+<details>
+<summary><b>Authentication — Clerk</b></summary>
+
+```env
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+```
+
+</details>
+
+<details>
+<summary><b>GitHub OAuth</b></summary>
+
+```env
+GITHUB_CLIENT_ID=...
+GITHUB_CLIENT_SECRET=...
+GITHUB_REDIRECT_URI=http://localhost:4000/api/github/callback
+```
+
+</details>
+
+<details>
+<summary><b>AI models — generation, NL→SQL &amp; vision</b></summary>
+
+```env
+# Script generation + natural-language → SQL
+GEMINI_API_KEY=...
+
+# Reasoning model (test-case generation) + vision (failure analysis)
+NVIDIA_API_KEY=...
+NVIDIA_TEXT_MODEL=...                  # optional override
+NVIDIA_VISION_MODEL=...                # optional override
+NVIDIA_VISION_FALLBACK_MODELS=...      # optional, comma-separated
+```
+
+</details>
+
+<details>
+<summary><b>Browser automation — Browserbase</b></summary>
+
+```env
+BROWSERBASE_API_KEY=...
+BROWSERBASE_PROJECT_ID=...
+```
+
+</details>
+
+<details>
+<summary><b>Voice — Speechmatics</b></summary>
+
+```env
+SPEECHMATICS_API_KEY=...
+NEXT_PUBLIC_SPEECHMATICS_RT_URL=...    # optional real-time endpoint override
+```
+
+</details>
+
+<details>
+<summary><b>Billing — Stripe</b></summary>
+
+```env
+STRIPE_SECRET_KEY=sk_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_...
+```
+
+</details>
+
+<details>
+<summary><b>Federated engineering context (optional)</b></summary>
+
+Powers *Related Context*, *Smart Run* signals, and the *Explorer*. The app degrades gracefully when it's not configured.
+
+```env
+CORAL_SIDECAR_URL=...
+CORAL_SIDECAR_SECRET=...
+```
+
+</details>
+
+---
+
+## 📂 Project Structure
+
+```
+.
+├── app/
+│   ├── api/                    # Server routes (test gen, run, smart-run, explorer, billing…)
+│   ├── workspace/              # Main authenticated app surface
+│   ├── sign-in/ · sign-up/     # Clerk auth pages
+│   └── page.tsx                # Landing page
+├── db/
+│   ├── index.ts                # Aurora DSQL connection (AuroraDSQLPool + Drizzle)
+│   └── schema.ts               # Drizzle schema (DSQL-compatible identity PKs)
+├── lib/
+│   ├── inference/              # Test generation, script gen, vision analysis
+│   ├── speechmatics/           # Voice client + command parser
+│   └── db/                     # Integrity + OCC-retry helpers
+├── scripts/
+│   ├── apply-dsql-ddl.mjs      # Apply the DSQL baseline schema
+│   └── verify-dsql.mjs         # Connectivity / schema check
+├── MIGRATION.md                # Neon → Aurora DSQL migration plan
+└── README.md
+```
+
+---
+
+## ❓ FAQ
+
+<details>
+<summary><b>Do I ever write a test file?</b></summary>
+
+No. You describe nothing manually — the AI generates both the test cases and the underlying Playwright scripts from your repository's source. You can regenerate any script on demand if your UI changes.
+
+</details>
+
+<details>
+<summary><b>Where do tests actually run?</b></summary>
+
+In real, isolated cloud Chromium sessions via Browserbase — each with a replayable session recording — not on your machine and not against a mocked DOM.
+
+</details>
+
+<details>
+<summary><b>What happens when a test fails?</b></summary>
+
+scriptless captures a screenshot, runs vision analysis to explain what's on screen, gathers related engineering context (recent commits, issues, errors), and produces a root-cause hypothesis with a recommended next action.
+
+</details>
+
+<details>
+<summary><b>Why Aurora DSQL instead of plain Postgres?</b></summary>
+
+For serverless, distributed, active-active scale with IAM-token auth (no static password). See [The Data Layer: Aurora DSQL](#-the-data-layer-aurora-dsql) and [`MIGRATION.md`](MIGRATION.md).
+
+</details>
+
+---
+
+<div align="center">
+
+**[🚀 Launch the live demo →](https://scriptless-ai-eta.vercel.app/)**
+
+<sub>Built with Next.js 16, Aurora DSQL, Playwright & Browserbase.</sub>
+
+</div>
